@@ -417,6 +417,25 @@ a{color:var(--info)}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.5}}
 .pulsing{animation:pulse 1.5s infinite}
 
+/* ─── DEVICE CONTROL ─── */
+.dc-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(185px,1fr));gap:9px;padding:10px}
+.dc-card{background:var(--glass);border:1px solid var(--border);border-radius:12px;padding:12px;transition:all var(--t);position:relative}
+.dc-card.connected{border-color:var(--success);background:rgba(34,197,94,.06)}
+.dc-card.unsupported{opacity:.5;pointer-events:none}
+.dc-hdr{display:flex;align-items:center;gap:8px;margin-bottom:6px}
+.dc-icon{font-size:20px;flex-shrink:0;line-height:1}
+.dc-title{font-weight:600;font-size:12px;flex:1;line-height:1.3}
+.dc-dot{width:8px;height:8px;border-radius:50%;background:var(--muted);flex-shrink:0;transition:background var(--t)}
+.dc-dot.on{background:var(--success);animation:pd 2s infinite}
+.dc-dot.err{background:var(--danger)}
+.dc-dot.busy{background:var(--warn);animation:pd 1s infinite}
+.dc-status{font-size:10px;color:var(--muted);margin-bottom:6px;min-height:13px;line-height:1.4}
+.dc-data{font-size:9px;font-family:monospace;color:var(--dim);background:rgba(0,0,0,.2);border-radius:4px;padding:3px 5px;margin-top:5px;min-height:18px;max-height:50px;overflow-y:auto;word-break:break-all}
+.dc-actions{display:flex;gap:4px;flex-wrap:wrap}
+.dc-sup-tag{font-size:9px;padding:1px 5px;border-radius:8px;font-weight:700}
+.dc-sup-yes{background:rgba(34,197,94,.15);color:var(--success)}
+.dc-sup-no{background:rgba(239,68,68,.12);color:var(--danger)}
+
 /* ─── MISC ─── */
 input[type=range]{-webkit-appearance:none;background:transparent;width:100%}
 input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:18px;height:18px;border-radius:50%;background:var(--primary);cursor:pointer;margin-top:-7px}
@@ -656,6 +675,7 @@ input[type=range]::-webkit-slider-runnable-track{height:4px;background:var(--bor
         <button class="tn" data-tab="stats" id="tn-adv-stats">📊 Stats</button>
         <button class="tn" data-tab="storage" id="tn-adv-storage">💾 Storage</button>
         <button class="tn" data-tab="compat" id="tn-dev-compat">🛡 Compat</button>
+        <button class="tn" data-tab="devices" id="tn-devices">🎛️ Devices</button>
         <button class="tn" data-tab="settings">⚙️ Settings</button>
       </div>
 
@@ -1006,6 +1026,18 @@ input[type=range]::-webkit-slider-runnable-track{height:4px;background:var(--bor
         <tbody id="compat-body"></tbody></table>
       </div>
 
+      <!-- DEVICE CONTROL -->
+      <div id="tab-devices" class="tabview" style="overflow-y:auto;flex-direction:column">
+        <div style="padding:10px 12px 8px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-shrink:0;background:var(--bg2)">
+          <div>
+            <div style="font-weight:700;font-size:14px">🎛️ Device Control Center</div>
+            <div style="font-size:11px;color:var(--muted);margin-top:1px">All hardware &amp; browser APIs available on this device</div>
+          </div>
+          <button class="btn btn-g btn-sm" id="btn-dc-refresh" onclick="App.devCtrl.refresh()">↺ Refresh</button>
+        </div>
+        <div id="dc-grid" class="dc-grid"></div>
+      </div>
+
       <!-- SETTINGS -->
       <div id="tab-settings" class="tabview" style="overflow-y:auto;padding:14px">
         <div style="font-weight:700;font-size:16px;margin-bottom:4px">⚙️ Settings</div>
@@ -1148,6 +1180,7 @@ input[type=range]::-webkit-slider-runnable-track{height:4px;background:var(--bor
     <button class="btn btn-g" style="width:100%;justify-content:flex-start;gap:12px;min-height:48px;font-size:14px" data-goto="notes">📝 Notes</button>
     <button class="btn btn-g" style="width:100%;justify-content:flex-start;gap:12px;min-height:48px;font-size:14px" data-goto="rc">🕹️ RC Control</button>
     <button class="btn btn-g" style="width:100%;justify-content:flex-start;gap:12px;min-height:48px;font-size:14px" data-goto="devlab">🔬 Device Lab</button>
+    <button class="btn btn-g" style="width:100%;justify-content:flex-start;gap:12px;min-height:48px;font-size:14px" data-goto="devices">🎛️ Device Control</button>
     <button class="btn btn-g" style="width:100%;justify-content:flex-start;gap:12px;min-height:48px;font-size:14px" data-goto="sensors">📡 Sensors</button>
     <button class="btn btn-g" style="width:100%;justify-content:flex-start;gap:12px;min-height:48px;font-size:14px" data-goto="stats">📊 Stats</button>
     <button class="btn btn-g" style="width:100%;justify-content:flex-start;gap:12px;min-height:48px;font-size:14px" data-goto="settings">⚙️ Settings</button>
@@ -2064,7 +2097,10 @@ class PeerManager {
           this._onClose(pid, 'zombie detected');
         }
       }
-      if (issues > 0) App.healer?.report(`${issues} zombie connection(s) cleaned up`);
+      if (issues > 0) {
+        App.healer?.report(`${issues} zombie connection(s) cleaned up`);
+        if (issues > 2) Timers.timeout('auto-self-repair', () => App.healer?.repair(), 1500);
+      }
     }, CFG.WATCHDOG_INTERVAL);
   }
 
@@ -2942,7 +2978,14 @@ class Whiteboard {
     document.getElementById('btn-wbu')?.addEventListener('click', () => this.undo());
     document.getElementById('btn-wbd')?.addEventListener('click', () => this.download());
   }
-  _resize() { const p = this.canvas.parentElement; this.canvas.width = p.clientWidth || window.innerWidth; this.canvas.height = p.clientHeight || 400; }
+  _resize() {
+    const p = this.canvas.parentElement;
+    const hadContent = this.ctx && this.canvas.width > 0 && this.canvas.height > 0;
+    const imgData = hadContent ? (() => { try { return this.ctx.getImageData(0, 0, this.canvas.width, this.canvas.height); } catch(e) { return null; } })() : null;
+    this.canvas.width = p.clientWidth || window.innerWidth;
+    this.canvas.height = p.clientHeight || 400;
+    if (imgData && this.ctx) { try { this.ctx.putImageData(imgData, 0, 0); } catch(e) {} }
+  }
   _pos(e) { const r = this.canvas.getBoundingClientRect(); const src = e.touches ? e.touches[0] : e; return [src.clientX - r.left, src.clientY - r.top]; }
   _bind() {
     let startX = 0, startY = 0, snapshot = null;
@@ -2983,7 +3026,11 @@ class Whiteboard {
     else if (op.tool === 'line') { this.ctx.moveTo(op.sx, op.sy); this.ctx.lineTo(op.x, op.y); }
     else if (op.tool === 'rect') { this.ctx.rect(op.sx, op.sy, op.x - op.sx, op.y - op.sy); }
     else if (op.tool === 'circle') { const rx = Math.abs(op.x - op.sx) / 2, ry = Math.abs(op.y - op.sy) / 2; this.ctx.ellipse(op.sx + (op.x - op.sx) / 2, op.sy + (op.y - op.sy) / 2, rx, ry, 0, 0, 2 * Math.PI); }
-    else if (op.tool === 'clear') { this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height); return; }
+    else if (op.tool === 'clear') {
+      this.history.push(this.ctx.getImageData(0, 0, this.canvas.width, this.canvas.height));
+      if (this.history.length > 30) this.history.shift();
+      this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height); return;
+    }
     this.ctx.stroke();
   }
   clear() { if (!this.ctx) return; this.history.push(this.ctx.getImageData(0, 0, this.canvas.width, this.canvas.height)); this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height); this._bcast({ tool: 'clear' }); }
@@ -3226,7 +3273,7 @@ class AutoMgr {
   fire(event, ctx) {
     for (const r of this.rules) {
       if (!r.enabled || r.if !== event) continue;
-      if (r.then === 'mqtt-pub' && App.iot.mqConn) { const [t, p] = (r.param || 'devhub/event:fired').split(':'); App.iot.mqPublish(t, p); }
+      if (r.then === 'mqtt-pub' && App.iot.mqConn && App.iot.mqttWS?.readyState === WebSocket.OPEN) { const [t, p] = (r.param || 'devhub/event:fired').split(':'); App.iot.mqPublish(t, p); }
       else if (r.then === 'send-msg' && App.ui.activePeer) App.peer.sendMsg(App.ui.activePeer, r.param || event, 'auto' + Date.now());
       else if (r.then === 'log') App.log.info(`Automation: ${r.param}`);
       else if (r.then === 'alert') App.toast.show(r.param || event, 'info');
@@ -3260,12 +3307,19 @@ class VoiceCommands {
     if (this.active) { this.stop(); return; }
     this.recognition = new SR(); this.recognition.continuous = true; this.recognition.interimResults = false; this.recognition.lang = 'en-US';
     this.recognition.onstart = () => { this.active = true; setEl('voice-status', null, el => el.classList.add('on')); setEl('voice-status-text', 'Listening…'); App.log.info('Voice commands: active'); };
-    this.recognition.onend = () => { this.active = false; setEl('voice-status', null, el => el.classList.remove('on')); };
-    this.recognition.onresult = e => { const text = e.results[e.results.length - 1][0].transcript.trim().toLowerCase(); this._handle(text); setEl('voice-status-text', `"${text}"`); };
-    this.recognition.onerror = e => { App.log.warn(`Voice: ${e.error}`); this.active = false; setEl('voice-status', null, el => el.classList.remove('on')); };
+    this._restarts = 0;
+    this.recognition.onend = () => {
+      this.active = false; setEl('voice-status', null, el => el.classList.remove('on'));
+      if (this._shouldRestart && this._restarts < 3) { this._restarts++; Timers.timeout('voice-restart', () => { if (this._shouldRestart) { this._shouldRestart = false; this.start(); } }, 800); }
+    };
+    this.recognition.onresult = e => { this._restarts = 0; const text = e.results[e.results.length - 1][0].transcript.trim().toLowerCase(); this._handle(text); setEl('voice-status-text', `"${text}"`); };
+    this.recognition.onerror = e => {
+      App.log.warn(`Voice: ${e.error}`); this.active = false; setEl('voice-status', null, el => el.classList.remove('on'));
+      if (e.error === 'no-speech' || e.error === 'aborted') { this._shouldRestart = true; }
+    };
     this.recognition.start();
   }
-  stop() { if (this.recognition) { try { this.recognition.stop(); } catch(e) {} this.recognition = null; } this.active = false; }
+  stop() { this._shouldRestart = false; this._restarts = 0; if (this.recognition) { try { this.recognition.stop(); } catch(e) {} this.recognition = null; } this.active = false; }
   _handle(text) {
     App.log.info(`Voice: "${text}"`);
     if (text.startsWith('call ')) {
@@ -3391,7 +3445,8 @@ class QREngine {
     const container = document.getElementById('qr-canvas-show');
     if (!container) return;
     container.innerHTML = '';
-    try { new QRCode(container, { text: url, width: 200, height: 200, colorDark: '#6366f1', colorLight: '#141420', correctLevel: QRCode.CorrectLevel.M }); }
+    const isDark = document.documentElement.getAttribute('data-theme') !== 'light';
+    try { new QRCode(container, { text: url, width: 200, height: 200, colorDark: isDark ? '#a5b4fc' : '#3730a3', colorLight: isDark ? '#141420' : '#ffffff', correctLevel: QRCode.CorrectLevel.M }); }
     catch(e) { container.textContent = url; }
     setEl('qr-link-lbl', url);
     Modal.show('qr-modal');
@@ -3461,8 +3516,8 @@ class ClipboardEngine {
         if (pid) { App.peer.sendMsg(pid, text, Date.now().toString(36)); App.ui?.appendMsg({ id: Date.now().toString(36), text, self: true, ts: Date.now(), peer: pid }); }
         pill.remove();
       }, { once: true });
-      document.getElementById('clip-close')?.addEventListener('click', () => pill.remove(), { once: true });
-      Timers.timeout('clip-pill', () => pill.remove(), 6000);
+      document.getElementById('clip-close')?.addEventListener('click', () => { Timers.clearTimeout('clip-pill'); pill.remove(); }, { once: true });
+      Timers.timeout('clip-pill', () => { if (document.body.contains(pill)) pill.remove(); }, 6000);
     } catch(e) { App.toast.show('Clipboard access denied', 'warning'); }
   }
   async write(text) {
@@ -3776,7 +3831,7 @@ class UIManager {
 
   _initDrag() {
     let dragCount = 0;
-    document.body.addEventListener('dragenter', e => { e.preventDefault(); dragCount++; document.getElementById('dragov').classList.add('on'); setEl('drag-tgt', this.activePeer ? `→ ${App.peer.peerName(this.activePeer)}` : 'Select a peer first'); });
+    document.body.addEventListener('dragenter', e => { e.preventDefault(); dragCount++; if (this.activePeer) { document.getElementById('dragov').classList.add('on'); setEl('drag-tgt', `→ ${App.peer.peerName(this.activePeer)}`); } });
     document.body.addEventListener('dragleave', e => { dragCount--; if (dragCount <= 0) { dragCount = 0; document.getElementById('dragov').classList.remove('on'); } });
     document.body.addEventListener('dragover', e => e.preventDefault());
     document.body.addEventListener('drop', e => {
@@ -4021,7 +4076,7 @@ class UIManager {
     Listeners.add('global-keydown', document, 'keydown', e => {
       if (e.key === 'Escape') { Modal.hideAll(); App.qr.stopScan(); document.querySelectorAll('.clippill').forEach(el => el.remove()); }
       if (e.ctrlKey || e.metaKey) {
-        if (e.key === 'k') { e.preventDefault(); Modal.show('search-ov'); document.getElementById('search-inp')?.focus(); }
+        if (e.key === 'k') { e.preventDefault(); Modal.hideAll(); Modal.show('search-ov'); document.getElementById('search-inp')?.focus(); }
         if (e.key === 'm') { e.preventDefault(); App.media.toggleMute(); }
         if (e.key === 'e') { e.preventDefault(); App.media.end(); }
         if (e.key === 'l') { e.preventDefault(); this.copyInvite(); }
@@ -4032,7 +4087,7 @@ class UIManager {
 
   _applyMode(mode) {
     const advanced = ['tn-adv-whiteboard', 'tn-adv-notes', 'tn-adv-stats', 'tn-adv-storage'];
-    const dev = ['tn-dev-rc', 'tn-dev-devlab', 'tn-dev-auto', 'tn-dev-sensors', 'tn-dev-compat'];
+    const dev = ['tn-dev-rc', 'tn-dev-devlab', 'tn-dev-auto', 'tn-dev-sensors', 'tn-dev-compat', 'tn-devices'];
     if (mode === 'simple') {
       advanced.forEach(id => setEl(id, null, el => el.style.display = 'none'));
       dev.forEach(id => setEl(id, null, el => el.style.display = 'none'));
@@ -4234,6 +4289,220 @@ function initOnboarding() {
 }
 
 /* ═══════════════════════════════════════════
+   DEVICE CONTROL MANAGER
+   Unified dashboard for all browser device/hardware APIs
+═══════════════════════════════════════════ */
+class DeviceControlMgr {
+  constructor() { this._devices = new Map(); this._camStream = null; this._micStream = null; this._wakeLock = null; }
+
+  init() { this._buildGrid(); this._autoListen(); }
+
+  _def() {
+    return [
+      { id:'bluetooth',    icon:'🔵', name:'Bluetooth (BLE)',  supported: !!navigator.bluetooth,                   desc:'Web Bluetooth — Chrome/Android', connect: () => App.iot.btScan?.()     },
+      { id:'serial',       icon:'🔌', name:'Web Serial',       supported: !!navigator.serial,                      desc:'Serial Port — Chrome desktop',   connect: () => App.iot.serConnect?.() },
+      { id:'usb',          icon:'🔗', name:'WebUSB',           supported: !!navigator.usb,                         desc:'USB devices — Chrome desktop',   connect: () => this._testUSB()        },
+      { id:'hid',          icon:'🕹️', name:'WebHID',           supported: !!navigator.hid,                         desc:'HID devices — Chrome desktop',   connect: () => this._testHID()        },
+      { id:'midi',         icon:'🎹', name:'Web MIDI',         supported: !!navigator.requestMIDIAccess,            desc:'MIDI — Chrome/Edge',             connect: () => App.iot.midiConnect?.()},
+      { id:'nfc',          icon:'📱', name:'NFC',              supported: 'NDEFReader' in window,                  desc:'NFC tap — Android Chrome',       connect: () => App.iot.nfcConnect?.() },
+      { id:'gamepad',      icon:'🎮', name:'Gamepad',          supported: !!navigator.getGamepads,                 desc:'Gamepad API — all browsers',     connect: () => this._testGamepad()    },
+      { id:'mqtt',         icon:'📡', name:'MQTT / IoT',       supported: 'WebSocket' in window,                   desc:'MQTT via WebSocket broker',      connect: () => App.iot.mqConnect?.()  },
+      { id:'camera',       icon:'📷', name:'Camera',           supported: !!navigator.mediaDevices?.getUserMedia,  desc:'getUserMedia video',             connect: () => this._testCamera()     },
+      { id:'microphone',   icon:'🎤', name:'Microphone',       supported: !!navigator.mediaDevices?.getUserMedia,  desc:'getUserMedia audio',             connect: () => this._testMic()        },
+      { id:'screen',       icon:'🖥️', name:'Screen Share',     supported: !!navigator.mediaDevices?.getDisplayMedia,desc:'getDisplayMedia capture',       connect: () => this._testScreen()     },
+      { id:'gps',          icon:'📍', name:'Geolocation',      supported: !!navigator.geolocation,                 desc:'Geolocation API',                connect: () => this._testGPS()        },
+      { id:'motion',       icon:'📐', name:'Motion / Gyro',    supported: typeof DeviceMotionEvent !== 'undefined', desc:'DeviceMotion — mobile browsers', connect: () => this._testMotion()     },
+      { id:'battery',      icon:'🔋', name:'Battery',          supported: !!navigator.getBattery,                  desc:'Battery Status API',             connect: () => this._testBattery()    },
+      { id:'clipboard',    icon:'📋', name:'Clipboard',        supported: !!navigator.clipboard,                   desc:'Clipboard API',                  connect: () => App.clipboard.read?.() },
+      { id:'wakelock',     icon:'🌞', name:'Wake Lock',        supported: !!navigator.wakeLock,                    desc:'Screen Wake Lock API',           connect: () => this._testWakeLock()   },
+      { id:'share',        icon:'🔗', name:'Web Share',        supported: !!navigator.share,                       desc:'Web Share API — mobile/Chrome',  connect: () => navigator.share({ title:'DevHub', url: App.room.inviteUrl?.() || location.href }).catch(()=>{}) },
+      { id:'notifications',icon:'🔔', name:'Notifications',    supported: typeof Notification !== 'undefined',     desc:'Notifications API',              connect: () => Notification.requestPermission().then(p => this.update('notifications', p === 'granted' ? 'Granted ✓' : 'Denied', p === 'granted', p === 'granted' ? 'Permission granted' : 'Permission denied')) },
+      { id:'orientation',  icon:'🧭', name:'Screen Orient.',   supported: !!screen.orientation,                    desc:'Screen Orientation API',         connect: () => this._testOrientation()},
+      { id:'vibrate',      icon:'📳', name:'Vibration',        supported: !!navigator.vibrate,                     desc:'Vibration API — Android',        connect: () => { if (navigator.vibrate([100,50,100,50,100])) this.update('vibrate', 'Vibrated!', true, 'Pattern: 100ms ON, 50ms OFF × 2'); else this.update('vibrate', 'Not supported', 'err'); } },
+    ];
+  }
+
+  _buildGrid() {
+    const grid = document.getElementById('dc-grid');
+    if (!grid) return;
+    const defs = this._def();
+    grid.innerHTML = defs.map(d => `
+      <div class="dc-card${d.supported ? '' : ' unsupported'}" id="dcc-${d.id}">
+        <div class="dc-hdr">
+          <div class="dc-icon">${d.icon}</div>
+          <div class="dc-title">${d.name}</div>
+          <div class="dc-dot" id="dcd-${d.id}"></div>
+        </div>
+        <div class="dc-status" id="dcs-${d.id}">${d.supported ? 'Available — not connected' : '❌ Not supported'}</div>
+        <div style="margin-top:4px"><span class="dc-sup-tag ${d.supported ? 'dc-sup-yes' : 'dc-sup-no'}">${d.supported ? 'Supported' : 'Unavailable'}</span></div>
+        <div class="dc-actions" style="margin-top:8px">
+          ${d.supported ? `
+            <button class="btn btn-p btn-xs" id="dcbtn-${d.id}" onclick="App.devCtrl._connect('${d.id}')">Connect</button>
+            <button class="btn btn-d btn-xs" id="dcdc-${d.id}" style="display:none" onclick="App.devCtrl._disconnect('${d.id}')">Disconnect</button>
+          ` : ''}
+        </div>
+        <div class="dc-data" id="dcdata-${d.id}" style="display:none"></div>
+      </div>
+    `).join('');
+    this._devices = new Map(defs.map(d => [d.id, { ...d, connected: false }]));
+  }
+
+  _connect(id) { const d = this._devices.get(id); if (d) d.connect(); }
+
+  _disconnect(id) {
+    switch (id) {
+      case 'bluetooth':    App.iot.btDisconnect?.(); this.update(id, 'Disconnected', false); break;
+      case 'serial':       App.iot.serDisconnect?.(); this.update(id, 'Disconnected', false); break;
+      case 'mqtt':         App.iot.mqDisconnect?.(); this.update(id, 'Disconnected', false); break;
+      case 'camera':       this._stopCamera(); break;
+      case 'microphone':   this._stopMic(); break;
+      case 'screen':       this._stopScreen(); break;
+      case 'wakelock':     if (this._wakeLock) { this._wakeLock.release(); this._wakeLock = null; } this.update(id, 'Released', false); break;
+      case 'motion':       if (this._motionCb) { window.removeEventListener('devicemotion', this._motionCb); this._motionCb = null; } this.update(id, 'Stopped', false); break;
+      case 'orientation':  if (this._orientCb) { window.removeEventListener('deviceorientationabsolute', this._orientCb); window.removeEventListener('deviceorientation', this._orientCb); this._orientCb = null; } this.update(id, 'Stopped', false); break;
+      default: this.update(id, 'Disconnected', false);
+    }
+  }
+
+  update(id, statusText, connected, data) {
+    const dot    = document.getElementById(`dcd-${id}`);
+    const status = document.getElementById(`dcs-${id}`);
+    const card   = document.getElementById(`dcc-${id}`);
+    const dcBtn  = document.getElementById(`dcdc-${id}`);
+    const conBtn = document.getElementById(`dcbtn-${id}`);
+    const dataEl = document.getElementById(`dcdata-${id}`);
+    const state  = connected === true ? 'on' : connected === 'err' ? 'err' : connected === 'busy' ? 'busy' : '';
+    if (dot)    { dot.className = 'dc-dot' + (state ? ' ' + state : ''); }
+    if (status)   status.textContent = statusText;
+    if (card)     card.classList.toggle('connected', connected === true);
+    if (dcBtn)    dcBtn.style.display = connected === true ? '' : 'none';
+    if (conBtn)   conBtn.style.display = connected === true ? 'none' : '';
+    if (dataEl && data !== undefined) { dataEl.style.display = ''; dataEl.textContent = typeof data === 'string' ? data : JSON.stringify(data).substring(0, 120); }
+    const d = this._devices.get(id);
+    if (d) d.connected = connected === true;
+  }
+
+  _autoListen() {
+    Timers.interval('dc-status-poll', () => {
+      if (App.iot?.mqConn) this.update('mqtt', 'Connected ● live', true);
+      if (App.iot?.btDevice?.gatt?.connected) this.update('bluetooth', `Connected: ${App.iot.btDevice.name || 'BT Device'}`, true);
+      if (App.iot?.serial) this.update('serial', 'Port open', true);
+      if (App.iot?.midiAccess) {
+        const n = [...App.iot.midiAccess.inputs.values()].length;
+        this.update('midi', `${n} MIDI input${n !== 1 ? 's' : ''} active`, n > 0);
+      }
+    }, 2000);
+    window.addEventListener('gamepadconnected',    e => this.update('gamepad', `Connected: ${e.gamepad.id.substring(0,40)}`, true, `Axes: ${e.gamepad.axes.length} | Buttons: ${e.gamepad.buttons.length}`));
+    window.addEventListener('gamepaddisconnected', () => this.update('gamepad', 'Gamepad disconnected', false));
+  }
+
+  async _testUSB() {
+    if (!navigator.usb) return;
+    try {
+      const dev = await navigator.usb.requestDevice({ filters: [] });
+      this.update('usb', `Connected: ${dev.productName || dev.manufacturerName || 'USB Device'}`, true, `VID:${dev.vendorId.toString(16)} PID:${dev.productId.toString(16)}`);
+    } catch(e) { if (e.name !== 'NotFoundError') this.update('usb', `Error: ${e.message}`, 'err'); }
+  }
+
+  async _testHID() {
+    if (!navigator.hid) return;
+    try {
+      const devs = await navigator.hid.requestDevice({ filters: [] });
+      if (devs.length) this.update('hid', `Connected: ${devs[0].productName || 'HID Device'}`, true, `${devs.length} device(s)`);
+    } catch(e) { if (e.name !== 'NotFoundError') this.update('hid', `Error: ${e.message}`, 'err'); }
+  }
+
+  _testGamepad() {
+    const pads = navigator.getGamepads ? [...navigator.getGamepads()].filter(Boolean) : [];
+    if (pads.length) {
+      this.update('gamepad', `${pads.length} gamepad(s) detected`, true, pads.map(p => p.id.substring(0,40)).join(', '));
+    } else {
+      this.update('gamepad', 'No gamepads — press a button on your gamepad', 'busy');
+    }
+  }
+
+  async _testCamera() {
+    this.update('camera', 'Requesting…', 'busy');
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+      const t = stream.getVideoTracks()[0];
+      this._camStream = stream;
+      this.update('camera', `Active: ${t?.label || 'Camera'}`, true, JSON.stringify(t?.getSettings?.() || {}).substring(0, 100));
+    } catch(e) { this.update('camera', `Error: ${e.message}`, 'err'); }
+  }
+  _stopCamera() { if (this._camStream) { this._camStream.getTracks().forEach(t => t.stop()); this._camStream = null; } this.update('camera', 'Stopped', false); }
+
+  async _testMic() {
+    this.update('microphone', 'Requesting…', 'busy');
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      this._micStream = stream;
+      this.update('microphone', `Active: ${stream.getAudioTracks()[0]?.label || 'Microphone'}`, true);
+    } catch(e) { this.update('microphone', `Error: ${e.message}`, 'err'); }
+  }
+  _stopMic() { if (this._micStream) { this._micStream.getTracks().forEach(t => t.stop()); this._micStream = null; } this.update('microphone', 'Stopped', false); }
+
+  async _testScreen() {
+    this.update('screen', 'Requesting…', 'busy');
+    try {
+      const stream = await navigator.mediaDevices.getDisplayMedia({ video: true });
+      this._scrStream = stream;
+      this.update('screen', `Sharing: ${stream.getVideoTracks()[0]?.label || 'Screen'}`, true);
+      stream.getVideoTracks()[0].addEventListener('ended', () => { this._scrStream = null; this.update('screen', 'Sharing ended', false); });
+    } catch(e) { this.update('screen', `Error: ${e.message}`, 'err'); }
+  }
+  _stopScreen() { if (this._scrStream) { this._scrStream.getTracks().forEach(t => t.stop()); this._scrStream = null; } this.update('screen', 'Stopped', false); }
+
+  _testGPS() {
+    this.update('gps', 'Requesting…', 'busy');
+    navigator.geolocation.getCurrentPosition(
+      p => this.update('gps', 'Location obtained', true, `Lat: ${p.coords.latitude.toFixed(5)}, Lon: ${p.coords.longitude.toFixed(5)}, Acc: ±${Math.round(p.coords.accuracy)}m`),
+      e => this.update('gps', `Error: ${e.message}`, 'err')
+    );
+  }
+
+  _testMotion() {
+    if (!('DeviceMotionEvent' in window)) { this.update('motion', 'Not available', 'err'); return; }
+    let count = 0;
+    this._motionCb = e => {
+      count++;
+      const a = e.acceleration;
+      if (a && count % 10 === 0) this.update('motion', `x:${(a.x||0).toFixed(2)} y:${(a.y||0).toFixed(2)} z:${(a.z||0).toFixed(2)}`, true);
+    };
+    window.addEventListener('devicemotion', this._motionCb);
+    this.update('motion', 'Listening for motion…', 'busy');
+    Timers.timeout('motion-check', () => { if (this._devices.get('motion')?.connected !== true) this.update('motion', 'No motion events (permissions?)', 'err'); }, 3000);
+  }
+
+  async _testBattery() {
+    try {
+      const b = await navigator.getBattery();
+      const fmt = () => `${Math.round(b.level*100)}% ${b.charging ? '⚡ Charging' : '🔋 On battery'}`;
+      this.update('battery', fmt(), true, `Level: ${Math.round(b.level*100)}% | Charging: ${b.charging} | Time: ${b.chargingTime !== Infinity ? b.chargingTime+'s' : '—'}`);
+      ['levelchange','chargingchange'].forEach(ev => b.addEventListener(ev, () => this.update('battery', fmt(), true)));
+    } catch(e) { this.update('battery', `Error: ${e.message}`, 'err'); }
+  }
+
+  async _testWakeLock() {
+    try {
+      this._wakeLock = await navigator.wakeLock.request('screen');
+      this.update('wakelock', 'Screen wake lock active', true, 'Screen will not sleep while DevHub is open');
+      this._wakeLock.addEventListener('release', () => { this._wakeLock = null; this.update('wakelock', 'Wake lock released', false); });
+    } catch(e) { this.update('wakelock', `Error: ${e.message}`, 'err'); }
+  }
+
+  _testOrientation() {
+    this._orientCb = e => this.update('orientation', `α:${(e.alpha||0).toFixed(1)}° β:${(e.beta||0).toFixed(1)}° γ:${(e.gamma||0).toFixed(1)}°`, true);
+    window.addEventListener('deviceorientationabsolute', this._orientCb);
+    window.addEventListener('deviceorientation', this._orientCb);
+    this.update('orientation', 'Listening…', 'busy');
+    Timers.timeout('orient-check', () => { if (this._devices.get('orientation')?.connected !== true) this.update('orientation', 'No orientation events', 'err'); }, 3000);
+  }
+
+  refresh() { this._buildGrid(); this._autoListen(); App.toast.show('Device status refreshed', 'success'); }
+}
+
+/* ═══════════════════════════════════════════
    APP BOOTSTRAP
 ═══════════════════════════════════════════ */
 const App = {
@@ -4259,6 +4528,7 @@ const App = {
   msgQ: new MsgQueue(),
   qr: new QREngine(),
   clipboard: new ClipboardEngine(),
+  devCtrl: new DeviceControlMgr(),
   ui: new UIManager(),
 
   async _boot() {
@@ -4274,6 +4544,7 @@ const App = {
     App.auto.init();
     App.rc.init();
     App.healer.init();
+    App.devCtrl.init();
     // Load history
     App.hist._render();
     App.hist._renderRecent();
@@ -4297,6 +4568,11 @@ const App = {
   const waitForLibs = (attempts) => {
     if (attempts > 20) {
       App.log.warn('PeerJS did not load from CDNs — check your connection');
+      // Bug #1 fix: show a visible banner when PeerJS CDN fails to load
+      const banner = document.createElement('div');
+      banner.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:9999;background:#ef4444;color:#fff;padding:10px 16px;font-size:13px;font-weight:600;display:flex;align-items:center;justify-content:space-between;gap:12px';
+      banner.innerHTML = `<span>⚠️ PeerJS library failed to load — P2P connections unavailable. Check your internet connection and <a href="" style="color:#fff;text-decoration:underline">reload</a>.</span><button onclick="this.parentElement.remove()" style="background:none;border:none;color:#fff;font-size:18px;cursor:pointer;flex-shrink:0">✕</button>`;
+      document.body.prepend(banner);
       initOnboarding();
       if (localStorage.getItem('dh-name')) App._boot();
       return;
