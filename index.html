@@ -1033,7 +1033,7 @@ input[type=range]::-webkit-slider-runnable-track{height:4px;background:var(--bor
             <div style="font-weight:700;font-size:14px">🎛️ Device Control Center</div>
             <div style="font-size:11px;color:var(--muted);margin-top:1px">All hardware &amp; browser APIs available on this device</div>
           </div>
-          <button class="btn btn-g btn-sm" id="btn-dc-refresh" onclick="App.devCtrl.refresh()">↺ Refresh</button>
+          <button class="btn btn-g btn-sm" id="btn-dc-refresh">↺ Refresh</button>
         </div>
         <div id="dc-grid" class="dc-grid"></div>
       </div>
@@ -3685,7 +3685,7 @@ class UIManager {
     this._bindModals();
     this._bindKeyboard();
     this._initDrag();
-    this._applyMode(localStorage.getItem('dh-mode') || 'advanced');
+    this._applyMode(localStorage.getItem('dh-mode') || 'developer');
     this._applyTheme();
   }
 
@@ -4397,9 +4397,16 @@ class DeviceControlMgr {
     this._batHandlers = {};
     this._usbDevice = null;
     this._hidDevices = [];
+    this._accelSensor = null;
+    this._ambientSensor = null;
+    this._scrCaptureStream = null;
   }
 
-  init() { this._buildGrid(); this._autoListen(); }
+  init() {
+    this._buildGrid();
+    this._autoListen();
+    document.getElementById('btn-dc-refresh')?.addEventListener('click', () => this.refresh());
+  }
 
   _def() {
     return [
@@ -4423,6 +4430,21 @@ class DeviceControlMgr {
       { id:'notifications',icon:'🔔', name:'Notifications',    supported: typeof Notification !== 'undefined',     desc:'Notifications API',              connect: () => Notification.requestPermission().then(p => this.update('notifications', p === 'granted' ? 'Granted ✓' : 'Denied', p === 'granted', p === 'granted' ? 'Permission granted' : 'Permission denied')) },
       { id:'orientation',  icon:'🧭', name:'Screen Orient.',   supported: !!screen.orientation,                    desc:'Screen Orientation API',         connect: () => this._testOrientation()},
       { id:'vibrate',      icon:'📳', name:'Vibration',        supported: !!navigator.vibrate,                     desc:'Vibration API — Android',        connect: () => { if (navigator.vibrate([100,50,100,50,100])) this.update('vibrate', 'Vibrated!', true, 'Pattern: 100ms ON, 50ms OFF × 2'); else this.update('vibrate', 'Not supported', 'err'); } },
+      // ─── Additional modern browser APIs ───────────────────────────────
+      { id:'speech-synth', icon:'🗣️', name:'Speech Synthesis',  supported: 'speechSynthesis' in window,              desc:'Text-to-Speech — all browsers',  connect: () => this._testSpeechSynth()    },
+      { id:'pip',          icon:'📺', name:'Picture-in-Picture', supported: !!document.pictureInPictureEnabled,       desc:'PiP video mode — Chrome/Edge',   connect: () => this._testPiP()            },
+      { id:'barcode',      icon:'📊', name:'Barcode Detector',   supported: 'BarcodeDetector' in window,             desc:'Shape Detection — Chrome/Android',connect: () => this._testBarcode()        },
+      { id:'eyedropper',  icon:'💧', name:'EyeDropper',         supported: 'EyeDropper' in window,                  desc:'Screen color picker — Chrome',   connect: () => this._testEyeDropper()     },
+      { id:'screen-lock',  icon:'🔄', name:'Screen Orientation', supported: !!screen.orientation,                    desc:'Orientation lock — mobile',      connect: () => this._testScreenOrient()   },
+      { id:'media-session',icon:'🎵', name:'Media Session',      supported: 'mediaSession' in navigator,              desc:'OS media controls & Now Playing', connect: () => this._testMediaSession()   },
+      { id:'webxr',        icon:'🥽', name:'WebXR (VR / AR)',    supported: 'xr' in navigator,                       desc:'Immersive VR/AR — Chrome/Edge',  connect: () => this._testWebXR()          },
+      { id:'file-system',  icon:'🗂️', name:'File System Access', supported: 'showOpenFilePicker' in window,          desc:'Native file picker — Chrome/Edge',connect: () => this._testFileSystem()     },
+      { id:'net-info',     icon:'📶', name:'Network Info',       supported: !!navigator.connection,                  desc:'Connection type & speed',        connect: () => this._testNetInfo()        },
+      { id:'accelerometer',icon:'⚡', name:'Accelerometer',      supported: 'Accelerometer' in window,               desc:'Generic Sensor API — Chrome',    connect: () => this._testAccelerometer()  },
+      { id:'ambient-light',icon:'☀️', name:'Ambient Light',      supported: 'AmbientLightSensor' in window,          desc:'Light level sensor — Android',   connect: () => this._testAmbientLight()   },
+      { id:'contacts',     icon:'👥', name:'Contact Picker',     supported: ('contacts' in navigator) && ('ContactsManager' in window), desc:'Contacts API — Android Chrome', connect: () => this._testContacts() },
+      { id:'screen-capture',icon:'🖥', name:'Screen Recording',  supported: !!navigator.mediaDevices?.getDisplayMedia, desc:'Record screen with audio',      connect: () => this._testScreenCapture()  },
+      { id:'speech-rec',   icon:'🎙️', name:'Speech Recognition', supported: !!(window.SpeechRecognition || window.webkitSpeechRecognition), desc:'Voice recognition — Chrome', connect: () => this._testSpeechRec() },
     ];
   }
 
@@ -4437,18 +4459,24 @@ class DeviceControlMgr {
           <div class="dc-title">${d.name}</div>
           <div class="dc-dot" id="dcd-${d.id}"></div>
         </div>
-        <div class="dc-status" id="dcs-${d.id}">${d.supported ? 'Available — not connected' : '❌ Not supported'}</div>
+        <div class="dc-status" id="dcs-${d.id}">${d.supported ? 'Available — not connected' : '❌ Not supported on this browser'}</div>
         <div style="margin-top:4px"><span class="dc-sup-tag ${d.supported ? 'dc-sup-yes' : 'dc-sup-no'}">${d.supported ? 'Supported' : 'Unavailable'}</span></div>
+        <div style="font-size:10px;color:var(--muted);margin-top:2px">${d.desc}</div>
         <div class="dc-actions" style="margin-top:8px">
           ${d.supported ? `
-            <button class="btn btn-p btn-xs" id="dcbtn-${d.id}" onclick="App.devCtrl._connect('${d.id}')">Connect</button>
-            <button class="btn btn-d btn-xs" id="dcdc-${d.id}" style="display:none" onclick="App.devCtrl._disconnect('${d.id}')">Disconnect</button>
+            <button class="btn btn-p btn-xs" id="dcbtn-${d.id}">Connect</button>
+            <button class="btn btn-d btn-xs" id="dcdc-${d.id}" style="display:none">Disconnect</button>
           ` : ''}
         </div>
         <div class="dc-data" id="dcdata-${d.id}" style="display:none"></div>
       </div>
     `).join('');
     this._devices = new Map(defs.map(d => [d.id, { ...d, connected: false }]));
+    // Bind connect/disconnect via addEventListener — no inline onclick handlers
+    defs.forEach(d => {
+      document.getElementById(`dcbtn-${d.id}`)?.addEventListener('click', () => this._connect(d.id));
+      document.getElementById(`dcdc-${d.id}`)?.addEventListener('click', () => this._disconnect(d.id));
+    });
   }
 
   _connect(id) { const d = this._devices.get(id); if (d) d.connect(); }
@@ -4483,8 +4511,16 @@ class DeviceControlMgr {
         if (this._hidDevices.length) { this._hidDevices.forEach(d => d.close().catch(() => {})); this._hidDevices = []; }
         this.update(id, 'Disconnected', false);
         break;
-      case 'gamepad':      this.update(id, 'No gamepad', false); break;
-      case 'gps':          if (this._gpsWatchId !== undefined) { navigator.geolocation.clearWatch(this._gpsWatchId); this._gpsWatchId = undefined; } this.update(id, 'Stopped', false); break;
+      case 'gamepad':        this.update(id, 'No gamepad', false); break;
+      case 'gps':            if (this._gpsWatchId !== undefined) { navigator.geolocation.clearWatch(this._gpsWatchId); this._gpsWatchId = undefined; } this.update(id, 'Stopped', false); break;
+      case 'speech-synth':   speechSynthesis?.cancel?.(); this.update(id, 'Stopped', false); break;
+      case 'media-session':  if ('mediaSession' in navigator) { navigator.mediaSession.playbackState = 'none'; navigator.mediaSession.metadata = null; } this.update(id, 'Stopped', false); break;
+      case 'accelerometer':  if (this._accelSensor) { this._accelSensor.stop(); this._accelSensor = null; } this.update(id, 'Stopped', false); break;
+      case 'ambient-light':  if (this._ambientSensor) { this._ambientSensor.stop(); this._ambientSensor = null; } this.update(id, 'Stopped', false); break;
+      case 'screen-capture': if (this._scrCaptureStream) { this._scrCaptureStream.getTracks().forEach(t => t.stop()); this._scrCaptureStream = null; } this.update(id, 'Stopped', false); break;
+      case 'net-info':       this.update(id, 'Disconnected', false); break;
+      case 'pip':            document.exitPictureInPicture?.().catch(() => {}); this.update(id, 'Exited', false); break;
+      case 'screen-lock':    screen.orientation?.unlock?.(); this.update(id, 'Unlocked', false); break;
       default: this.update(id, 'Disconnected', false);
     }
   }
@@ -4669,7 +4705,203 @@ class DeviceControlMgr {
     }, 3000);
   }
 
-  refresh() { this._buildGrid(); this._autoListen(); App.toast.show('Device status refreshed', 'success'); }
+  /* ── New comprehensive device API test methods ───────────────────── */
+
+  _testSpeechSynth() {
+    if (!('speechSynthesis' in window)) { this.update('speech-synth', 'Not available', 'err'); return; }
+    const u = new SpeechSynthesisUtterance('DevHub connected and ready');
+    u.rate = 1; u.pitch = 1; u.volume = 1;
+    u.onend = () => {
+      const voices = speechSynthesis.getVoices().length;
+      this.update('speech-synth', 'Speech synthesis working!', true, `${voices} voice${voices !== 1 ? 's' : ''} available`);
+    };
+    u.onerror = e => this.update('speech-synth', `Error: ${e.error}`, 'err');
+    speechSynthesis.cancel();
+    speechSynthesis.speak(u);
+    this.update('speech-synth', 'Speaking…', 'busy', 'Text-to-speech test running');
+  }
+
+  _testPiP() {
+    const pip = document.pictureInPictureEnabled;
+    const active = !!document.pictureInPictureElement;
+    if (active) {
+      document.exitPictureInPicture().catch(() => {});
+      this.update('pip', 'Exited PiP mode', false);
+    } else {
+      this.update('pip', pip ? 'Available — use during an active call' : 'Disabled by page policy', pip, pip ? 'Enter a call then use the PiP button in the call view' : 'PiP was disabled by browser policy');
+    }
+  }
+
+  async _testBarcode() {
+    if (!('BarcodeDetector' in window)) { this.update('barcode', 'Not supported', 'err'); return; }
+    try {
+      const formats = await BarcodeDetector.getSupportedFormats();
+      this.update('barcode', `Ready — ${formats.length} formats`, true, `Formats: ${formats.slice(0, 6).join(', ')}${formats.length > 6 ? '…' : ''}`);
+    } catch(e) { this.update('barcode', `Error: ${e.message}`, 'err'); }
+  }
+
+  async _testEyeDropper() {
+    if (!('EyeDropper' in window)) { this.update('eyedropper', 'Not supported', 'err'); return; }
+    try {
+      const picker = new EyeDropper();
+      this.update('eyedropper', 'Click anywhere to pick a color…', 'busy');
+      const result = await picker.open();
+      this.update('eyedropper', `Picked: ${result.sRGBHex}`, true, result.sRGBHex);
+    } catch(e) {
+      if (e.name === 'AbortError') this.update('eyedropper', 'Cancelled', false);
+      else this.update('eyedropper', `Error: ${e.message}`, 'err');
+    }
+  }
+
+  _testScreenOrient() {
+    const ori = screen.orientation;
+    if (!ori) { this.update('screen-lock', 'Not available', 'err'); return; }
+    const fmt = () => `${ori.type} (${ori.angle}°)`;
+    this.update('screen-lock', fmt(), true, `Type: ${ori.type} | Angle: ${ori.angle}°`);
+    ori.addEventListener('change', () => this.update('screen-lock', fmt(), true));
+  }
+
+  _testMediaSession() {
+    if (!('mediaSession' in navigator)) { this.update('media-session', 'Not available', 'err'); return; }
+    try {
+      navigator.mediaSession.metadata = new MediaMetadata({
+        title: 'DevHub — P2P Hub', artist: 'DevHub', album: 'Universal Device Hub'
+      });
+      navigator.mediaSession.playbackState = 'playing';
+      ['play','pause','stop'].forEach(a => {
+        try { navigator.mediaSession.setActionHandler(a, () => {}); } catch(e) {}
+      });
+      this.update('media-session', `Active — ${navigator.mediaSession.playbackState}`, true, 'Media metadata set; controls visible in OS');
+    } catch(e) { this.update('media-session', `Error: ${e.message}`, 'err'); }
+  }
+
+  async _testWebXR() {
+    if (!('xr' in navigator)) { this.update('webxr', 'Not available', 'err'); return; }
+    try {
+      const vr = await navigator.xr.isSessionSupported('immersive-vr').catch(() => false);
+      const ar = await navigator.xr.isSessionSupported('immersive-ar').catch(() => false);
+      const inline = await navigator.xr.isSessionSupported('inline').catch(() => false);
+      const any = vr || ar || inline;
+      this.update('webxr', any ? 'XR detected' : 'No XR hardware', any,
+        `Immersive VR: ${vr ? '✓' : '✗'} | AR: ${ar ? '✓' : '✗'} | Inline: ${inline ? '✓' : '✗'}`);
+    } catch(e) { this.update('webxr', `Error: ${e.message}`, 'err'); }
+  }
+
+  async _testFileSystem() {
+    if (!('showOpenFilePicker' in window)) { this.update('file-system', 'Not available', 'err'); return; }
+    try {
+      const [fh] = await showOpenFilePicker({ multiple: false });
+      const file = await fh.getFile();
+      this.update('file-system', `Selected: ${file.name}`, true,
+        `Size: ${(file.size / 1024).toFixed(1)} KB | Type: ${file.type || 'unknown'}`);
+    } catch(e) {
+      if (e.name === 'AbortError') this.update('file-system', 'Cancelled', false);
+      else this.update('file-system', `Error: ${e.message}`, 'err');
+    }
+  }
+
+  _testNetInfo() {
+    const c = navigator.connection;
+    if (!c) { this.update('net-info', 'Not available', 'err'); return; }
+    const fmt = () => `${c.effectiveType || '?'} — ↓${c.downlink || '?'} Mbps RTT ${c.rtt || '?'}ms`;
+    this.update('net-info', fmt(), true,
+      `Type: ${c.type || 'unknown'} | Downlink: ${c.downlink || '?'} Mbps | RTT: ${c.rtt || '?'}ms | Save-data: ${c.saveData}`);
+    c.addEventListener('change', () => this.update('net-info', fmt(), true));
+  }
+
+  _testAccelerometer() {
+    if (!('Accelerometer' in window)) { this.update('accelerometer', 'Not available', 'err'); return; }
+    try {
+      if (this._accelSensor) { this._accelSensor.stop(); this._accelSensor = null; }
+      const sensor = new Accelerometer({ frequency: 5 });
+      sensor.addEventListener('reading', () => {
+        this.update('accelerometer', `x:${(sensor.x||0).toFixed(2)} y:${(sensor.y||0).toFixed(2)} z:${(sensor.z||0).toFixed(2)}`, true);
+      });
+      sensor.addEventListener('error', e => this.update('accelerometer', `Error: ${e.error?.message || e.message}`, 'err'));
+      sensor.start();
+      this._accelSensor = sensor;
+      this.update('accelerometer', 'Starting…', 'busy');
+    } catch(e) { this.update('accelerometer', `Error: ${e.message}`, 'err'); }
+  }
+
+  _testAmbientLight() {
+    if (!('AmbientLightSensor' in window)) { this.update('ambient-light', 'Not available', 'err'); return; }
+    try {
+      if (this._ambientSensor) { this._ambientSensor.stop(); this._ambientSensor = null; }
+      const sensor = new AmbientLightSensor();
+      sensor.addEventListener('reading', () => {
+        this.update('ambient-light', `${(sensor.illuminance || 0).toFixed(1)} lux`, true,
+          `Illuminance: ${(sensor.illuminance || 0).toFixed(1)} lux`);
+      });
+      sensor.addEventListener('error', e => this.update('ambient-light', `Error: ${e.error?.message || e.message}`, 'err'));
+      sensor.start();
+      this._ambientSensor = sensor;
+      this.update('ambient-light', 'Starting…', 'busy');
+    } catch(e) { this.update('ambient-light', `Error: ${e.message}`, 'err'); }
+  }
+
+  async _testContacts() {
+    if (!('contacts' in navigator)) { this.update('contacts', 'Not available', 'err'); return; }
+    try {
+      const props = ['name', 'tel', 'email'];
+      const contacts = await navigator.contacts.select(props, { multiple: false });
+      if (contacts.length) {
+        const c = contacts[0];
+        this.update('contacts', `${c.name?.[0] || 'Contact'} selected`, true,
+          `Tel: ${c.tel?.[0] || '—'} | Email: ${c.email?.[0] || '—'}`);
+      } else {
+        this.update('contacts', 'No contact selected', false);
+      }
+    } catch(e) {
+      if (e.name === 'AbortError') this.update('contacts', 'Cancelled', false);
+      else this.update('contacts', `Error: ${e.message}`, 'err');
+    }
+  }
+
+  async _testScreenCapture() {
+    if (!navigator.mediaDevices?.getDisplayMedia) { this.update('screen-capture', 'Not available', 'err'); return; }
+    try {
+      const stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
+      const tracks = stream.getTracks();
+      const hasAudio = tracks.some(t => t.kind === 'audio');
+      this.update('screen-capture', `Capturing — ${tracks.length} track${tracks.length !== 1 ? 's' : ''}`, true,
+        `Video: ✓ | Audio: ${hasAudio ? '✓' : '✗'} | Resolution: ${stream.getVideoTracks()[0]?.getSettings().width || '?'}×${stream.getVideoTracks()[0]?.getSettings().height || '?'}`);
+      tracks.forEach(t => t.addEventListener('ended', () => {
+        this.update('screen-capture', 'Capture ended', false);
+        this._scrCaptureStream = null;
+      }));
+      this._scrCaptureStream = stream;
+    } catch(e) {
+      if (e.name === 'NotAllowedError') this.update('screen-capture', 'Permission denied', 'err');
+      else this.update('screen-capture', `Error: ${e.message}`, 'err');
+    }
+  }
+
+  _testSpeechRec() {
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SR) { this.update('speech-rec', 'Not available', 'err'); return; }
+    try {
+      const rec = new SR();
+      rec.continuous = false; rec.interimResults = false; rec.maxAlternatives = 1;
+      rec.onresult = e => {
+        const t = e.results[0][0].transcript;
+        this.update('speech-rec', `"${t.substring(0, 50)}"`, true, `Confidence: ${(e.results[0][0].confidence * 100).toFixed(0)}%`);
+      };
+      rec.onerror = e => {
+        if (e.error === 'not-allowed') this.update('speech-rec', 'Microphone permission denied', 'err');
+        else this.update('speech-rec', `Error: ${e.error}`, 'err');
+      };
+      rec.onend = () => { if (this._devices.get('speech-rec')?.connected !== true) this.update('speech-rec', 'Say something…', 'busy'); };
+      rec.start();
+      this.update('speech-rec', 'Listening — speak now…', 'busy');
+    } catch(e) { this.update('speech-rec', `Error: ${e.message}`, 'err'); }
+  }
+
+  refresh() {
+    // Bug: do NOT call _autoListen() again — it creates duplicate intervals; just rebuild grid
+    this._buildGrid();
+    App.toast.show('Device status refreshed', 'success');
+  }
 }
 
 /* ═══════════════════════════════════════════
@@ -4734,6 +4966,17 @@ const App = {
   // Apply theme immediately (no flash)
   const theme = localStorage.getItem('dh-theme');
   if (theme === 'light') document.documentElement.setAttribute('data-theme', 'light');
+
+  // Apply mode immediately so tabs show correct state BEFORE App._boot() runs
+  (function applyModeNow() {
+    const mode = localStorage.getItem('dh-mode') || 'developer';
+    const adv = ['tn-adv-whiteboard','tn-adv-notes','tn-adv-stats','tn-adv-storage'];
+    const dev = ['tn-dev-rc','tn-dev-devlab','tn-dev-auto','tn-dev-sensors','tn-dev-compat','tn-devices'];
+    const show = (ids, visible) => ids.forEach(id => { const el = document.getElementById(id); if (el) el.style.display = visible ? '' : 'none'; });
+    if (mode === 'simple') { show(adv, false); show(dev, false); }
+    else if (mode === 'advanced') { show(adv, true); show(dev, false); }
+    else { show(adv, true); show(dev, true); } // 'developer' — show everything
+  })();
 
   const waitForLibs = (attempts) => {
     if (attempts > 20) {
