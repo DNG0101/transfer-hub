@@ -1287,6 +1287,8 @@ const TAB_NONCE = (() => {
   if (!n) { n = Math.random().toString(36).slice(2, 8); sessionStorage.setItem('tab-nonce', n); }
   return n;
 })();
+// FIX-6: tab-scoped key prevents cross-tab peer ID collisions (e.g. duplicate tab)
+const SESSION_KEY = 'dh-peer-id-' + TAB_NONCE;
 
 /* ═══════════════════════════════════════════
    UTILITIES
@@ -1350,24 +1352,27 @@ const PERF = (() => {
 /* ═══════════════════════════════════════════
    TIMER REGISTRY (prevents timer leaks)
 ═══════════════════════════════════════════ */
+// FIX-8: Timers stores {id, type} to avoid calling clearTimeout on an interval id
 const Timers = {
   _i: new Map(),
   timeout(key, fn, ms) {
-    if (this._i.has(key)) clearTimeout(this._i.get(key));
+    const prev = this._i.get(key);
+    if (prev) { prev.type === 'timeout' ? clearTimeout(prev.id) : clearInterval(prev.id); }
     const id = setTimeout(() => { this._i.delete(key); fn(); }, ms);
-    this._i.set(key, id);
+    this._i.set(key, { id, type: 'timeout' });
     return id;
   },
   interval(key, fn, ms) {
-    if (this._i.has(key)) clearInterval(this._i.get(key));
+    const prev = this._i.get(key);
+    if (prev) { prev.type === 'timeout' ? clearTimeout(prev.id) : clearInterval(prev.id); }
     const id = setInterval(fn, ms);
-    this._i.set(key, id);
+    this._i.set(key, { id, type: 'interval' });
     return id;
   },
-  clearTimeout(key) { if (this._i.has(key)) { clearTimeout(this._i.get(key)); this._i.delete(key); } },
-  clearInterval(key) { if (this._i.has(key)) { clearInterval(this._i.get(key)); this._i.delete(key); } },
-  clear(key) { if (this._i.has(key)) { clearTimeout(this._i.get(key)); clearInterval(this._i.get(key)); this._i.delete(key); } },
-  clearAll() { this._i.forEach((id, key) => { clearTimeout(id); clearInterval(id); }); this._i.clear(); }
+  clearTimeout(key) { const e = this._i.get(key); if (e) { clearTimeout(e.id); this._i.delete(key); } },
+  clearInterval(key) { const e = this._i.get(key); if (e) { clearInterval(e.id); this._i.delete(key); } },
+  clear(key) { const e = this._i.get(key); if (e) { e.type === 'timeout' ? clearTimeout(e.id) : clearInterval(e.id); this._i.delete(key); } },
+  clearAll() { this._i.forEach(e => { e.type === 'timeout' ? clearTimeout(e.id) : clearInterval(e.id); }); this._i.clear(); }
 };
 
 /* ═══════════════════════════════════════════
@@ -1555,9 +1560,9 @@ class CryptoEngine {
         { name: 'ECDH', namedCurve: 'P-256' },
         false, ['deriveKey']
       );
-      // FIX: export as 'raw' (65 bytes) not JWK for cross-browser compat
+      // FIX-7: export as 'raw' and encode as base64 for Safari compat
       const raw = await crypto.subtle.exportKey('raw', this._keypair.publicKey);
-      this._publicKeyRaw = Array.from(new Uint8Array(raw));
+      this._publicKeyRaw = btoa(String.fromCharCode(...new Uint8Array(raw)));
       App.log.info('CryptoEngine: ECDH keypair generated');
     } catch(e) {
       App.log.warn('CryptoEngine: init failed — ' + e.message);
@@ -1569,7 +1574,13 @@ class CryptoEngine {
   async deriveSharedKey(peerId, peerPubKeyBytes) {
     if (!this._keypair) return;
     try {
-      const rawBuf = new Uint8Array(peerPubKeyBytes).buffer;
+      // FIX-7: decode base64 string or fall back to legacy number array
+      let rawBuf;
+      if (typeof peerPubKeyBytes === 'string') {
+        rawBuf = Uint8Array.from(atob(peerPubKeyBytes), c => c.charCodeAt(0)).buffer;
+      } else {
+        rawBuf = new Uint8Array(peerPubKeyBytes).buffer;
+      }
       const peerPubKey = await crypto.subtle.importKey(
         'raw', rawBuf, { name: 'ECDH', namedCurve: 'P-256' }, false, []
       );
@@ -1998,11 +2009,12 @@ class PeerManager {
 
   async init() {
     const name = localStorage.getItem('dh-name') || 'Peer';
-    const savedId = sessionStorage.getItem('dh-peer-id');
+    // FIX-6: use SESSION_KEY (tab-scoped) to prevent cross-tab ID reuse
+    const savedId = sessionStorage.getItem(SESSION_KEY);
     const idBase = name.toLowerCase().replace(/[^a-z0-9]/g,'').substring(0,8) || 'peer';
     const freshId = `${idBase}-${TAB_NONCE}-${Date.now().toString(36).slice(-4)}`;
     const myId = savedId || freshId;
-    sessionStorage.setItem('dh-peer-id', myId);
+    sessionStorage.setItem(SESSION_KEY, myId);
 
     await App.crypto.init();
     await App.trust.load();
@@ -2037,7 +2049,7 @@ class PeerManager {
 
     this.peer.on('open', peerId => {
       this.myId = peerId;
-      sessionStorage.setItem('dh-peer-id', peerId);
+      sessionStorage.setItem(SESSION_KEY, peerId);
       this._reconnectAttempts = 0;
       this._reconnecting = false;
       App.log.success(`PeerJS ready: ${peerId}`);
@@ -2081,7 +2093,7 @@ class PeerManager {
       } else if (err.type === 'unavailable-id') {
         const base = (localStorage.getItem('dh-name')||'peer').toLowerCase().replace(/[^a-z0-9]/g,'').substring(0,8) || 'peer';
         const newId = `${base}-${TAB_NONCE}-${Date.now().toString(36)}`;
-        sessionStorage.setItem('dh-peer-id', newId);
+        sessionStorage.setItem(SESSION_KEY, newId);
         App.log.warn(`ID conflict, regenerating → ${newId.substring(0,16)}`);
         Timers.timeout('id-regen', () => this._create(newId), 800);
       }
@@ -2141,6 +2153,13 @@ class PeerManager {
   _setupConn(conn) {
     const pid = conn.peer;
     if (App.room.isBlocked(pid)) { conn.close(); return; }
+
+    // FIX-5: remove duplicate listeners if reconnecting to same peer
+    const existing = this.dconns.get(pid);
+    if (existing && existing !== conn) {
+      try { existing.removeAllListeners(); existing.close(); } catch(e) {}
+      this.dconns.delete(pid);
+    }
 
     conn.on('open', async () => {
       this.dconns.set(pid, conn);
@@ -2428,6 +2447,8 @@ class FileTransfer {
     this._activeSends = 0;
     this._sendQueue = [];      // pending file sends
     this._frPool = 0;          // FileReader semaphore counter
+    // FIX-1: buffer binary chunks that arrive before file-meta JSON
+    this._pendingChunks = new Map(); // tid → ArrayBuffer[]
   }
 
   // Send one or more files to a peer
@@ -2520,8 +2541,10 @@ class FileTransfer {
 
         inFlight.set(seq, { frame, resolve: null, reject: null });
         try {
+          // FIX-2: register resolver BEFORE sending so ACK can never arrive first
+          const p = attempt();
           conn.send(frame);
-          await attempt();
+          await p;
           inFlight.delete(seq);
           state.ackedChunks++;
           state.bytesSent += chunk.byteLength;
@@ -2587,6 +2610,12 @@ class FileTransfer {
     this._recvs.set(tid, state);
     this._renderRx(tid, name, size);
     App.log.info(`Receiving: ${name} (${fmtSz(size)})`);
+    // FIX-1: drain any chunks that arrived before this meta
+    const early = this._pendingChunks.get(tid);
+    if (early) {
+      this._pendingChunks.delete(tid);
+      for (const { buf: rawBuf, pid: rpid } of early) this._onBinaryChunk(rpid, rawBuf);
+    }
   }
 
   // Called on binary frame arrival (FIX F1: binary carries chunk data)
@@ -2604,7 +2633,13 @@ class FileTransfer {
     const chunkData = buf.slice(off);
 
     const state = this._recvs.get(tid);
-    if (!state || state.cancelled) return;
+    // FIX-1: buffer early chunks that arrived before file-meta JSON
+    if (!state) {
+      if (!this._pendingChunks.has(tid)) this._pendingChunks.set(tid, []);
+      this._pendingChunks.get(tid).push({ seq, chunkData, pid, buf });
+      return;
+    }
+    if (state.cancelled) return;
 
     // Store chunk
     state.parts[seq] = chunkData;
@@ -2934,8 +2969,9 @@ class MediaManager {
 
   end() {
     if (this._ending) return;
-    if (!this.inCall && !this._localStream) return;
+    // FIX-4: set guard immediately as 2nd line so re-entrant calls are blocked
     this._ending = true;
+    if (!this.inCall && !this._localStream) { this._ending = false; return; }
     try {
       this._cleanupMedia();
       const pid = this.callPeerId;
@@ -3398,18 +3434,24 @@ class CodeEditor {
     fr.setAttribute('sandbox', 'allow-scripts');
     fr.style.display = 'none';
     document.body.appendChild(fr);
+    // FIX-13: guard prevents listener/iframe leaking if cleanup called multiple times
+    let cleaned = false;
+    const cleanup = () => {
+      if (cleaned) return;
+      cleaned = true;
+      window.removeEventListener('message', listener);
+      if (document.body.contains(fr)) fr.remove();
+    };
     const listener = e => {
       if (e.source !== fr.contentWindow) return;
       if (e.data?.type === 'log') logs.push(e.data.msg);
       if (e.data?.type === 'done') {
-        window.removeEventListener('message', listener);
-        fr.remove();
+        cleanup();
         out.textContent = logs.join('\n') + (e.data.result !== undefined ? '\n→ ' + JSON.stringify(e.data.result) : '');
         setEl('ce-status', '✅ Ran OK');
       }
       if (e.data?.type === 'error') {
-        window.removeEventListener('message', listener);
-        fr.remove();
+        cleanup();
         out.textContent = '❌ ' + e.data.msg;
         setEl('ce-status', '❌ Error');
       }
@@ -3427,12 +3469,9 @@ class CodeEditor {
     <\/script>`;
     document.body.appendChild(fr);
     Timers.timeout('ce-sandbox', () => {
-      if (document.body.contains(fr)) {
-        window.removeEventListener('message', listener);
-        fr.remove();
-        out.textContent = '⏱ Execution timed out (5s)';
-        setEl('ce-status', '⏱ Timeout');
-      }
+      cleanup();
+      out.textContent = '⏱ Execution timed out (5s)';
+      setEl('ce-status', '⏱ Timeout');
     }, 5000);
   }
 
@@ -3746,7 +3785,9 @@ class RCControl {
     if (log) { log.insertAdjacentHTML('afterbegin', `<div style="color:var(--primary)">[${fmtTs(Date.now())}] ← ${esc(msg.cmd)}</div>`); while (log.children.length > 30) log.lastChild?.remove(); }
   }
 
+  // FIX-12: store rAF handle so the loop can be cancelled
   _pollGamepad() {
+    if (this._gpRaf) return; // already polling
     const poll = () => {
       const gps = navigator.getGamepads ? navigator.getGamepads() : [];
       for (const gp of gps) {
@@ -3758,9 +3799,13 @@ class RCControl {
         if (gp.axes[1] < -0.5) this._send('up');
         if (gp.axes[1] > 0.5) this._send('down');
       }
-      requestAnimationFrame(poll);
+      this._gpRaf = requestAnimationFrame(poll);
     };
-    requestAnimationFrame(poll);
+    this._gpRaf = requestAnimationFrame(poll);
+  }
+
+  stopGamepad() {
+    if (this._gpRaf) { cancelAnimationFrame(this._gpRaf); this._gpRaf = null; }
   }
 }
 
@@ -4790,9 +4835,15 @@ class UIManager {
     // Vault
     document.getElementById('btn-vault-unlock')?.addEventListener('click', () => {
       const el = document.getElementById('vault-pw');
+      const btn = document.getElementById('btn-vault-unlock');
       const pw = el?.value;
       if (pw) {
-        App.vault.unlock(pw).finally(() => { if (el) el.value = ''; });
+        // FIX-11: disable button during PBKDF2 to prevent double-unlock
+        if (btn) btn.disabled = true;
+        App.vault.unlock(pw).finally(() => {
+          if (el) el.value = '';
+          if (btn) btn.disabled = false;
+        });
       }
     });
     document.getElementById('vault-pw')?.addEventListener('keydown', e => { if (e.key === 'Enter') document.getElementById('btn-vault-unlock')?.click(); });
@@ -4881,6 +4932,17 @@ class UIManager {
     this._updUnread(pid);
     const conn = App.peer.conn(pid);
     if (conn?.open) try { conn.send(JSON.stringify({ type: 'read', id: 'all' })); } catch(e) {}
+    // FIX-9: load persisted messages from IndexedDB so chat is not blank on selection
+    App.hist.load().then(() => {
+      const msgs = App.hist.get(pid);
+      if (msgs && msgs.length) {
+        const box = document.getElementById('msgs');
+        if (box) {
+          box.innerHTML = '';
+          msgs.forEach(m => App.ui.appendMsg(m.from, m.text, m.ts, m.mine));
+        }
+      }
+    }).catch(() => {});
   }
 
   renderPeer(pid, fp, status) {
