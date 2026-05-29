@@ -1482,7 +1482,7 @@ select{appearance:none;-webkit-appearance:none;background-image:url("data:image/
    CONFIG MANAGER — central config, no magic numbers
 ═══════════════════════════════════════════════════════ */
 const CFG = {
-  VERSION: '3.1.0',
+  VERSION: '3.2.0',
   DB_NAME: 'devhub-v4',
   DB_VERSION: 4,
   CHUNK_SIZE: 256 * 1024,
@@ -1730,6 +1730,7 @@ class SessionState {
 class SessionEncryptor {
   constructor() { this._key = null; }
   async init() {
+    if(!window.crypto?.subtle){try{App.log?.warn('SessionEncryptor: SubtleCrypto unavailable — running without encryption');}catch(e){}return;}
     try {
       let rawKey = sessionStorage.getItem('dh-session-enc-key');
       if (!rawKey) {
@@ -1768,6 +1769,7 @@ class SessionEncryptor {
 const REQUIRED_STORES = ['messages','transfers','history','call_history','settings','vault','trusted_peers','msg_queue','notifications','notes'];
 
 class StorageEngine {
+  static _idbAvailable=typeof indexedDB!=='undefined';
   constructor(){this._db=null;}
 
   async init() {
@@ -2215,6 +2217,7 @@ class SelfHealingEngine {
     App.toast.show('Self-heal complete','success');
   }
   repairTimers() {
+    if(Timers._i.size>80){const _ks=[...Timers._i.keys()],_ex=_ks.length-60;_ks.slice(0,_ex).forEach(k=>Timers.clear(k));try{App.log?.warn('Self-heal: force-pruned '+_ex+' stale timers');}catch(e){}}
     const count=Timers._i.size;
     if(count>60){
       const preserve=new Set(['ping-loop','presence-loop','session-save','smart-check-loop','health-check','stat-upd','totp-refresh']);
@@ -2253,9 +2256,10 @@ class AdaptiveResourceManager {
         };
       } catch(e){}
     }
-    if(navigator.connection) {
-      navigator.connection.onchange=()=>{
-        const t=navigator.connection.effectiveType;
+    const _nconn=navigator.connection||navigator.mozConnection||navigator.webkitConnection;
+    if(_nconn) {
+      _nconn.onchange=()=>{
+        const t=_nconn.effectiveType;
         if(t==='slow-2g'||t==='2g') {
           App.toast.show('Slow network detected — optimizing…','warning');
         }
@@ -2921,6 +2925,7 @@ class PeerManager {
     this._reconnectAttempts=0;
     this._reconnecting=false;
     this._destroyed=false;
+    this._lastReconnectAt=0;
     this._lastMsgTs=new Map();
     this._settingUp=new Set();
   }
@@ -3001,6 +3006,7 @@ class PeerManager {
 
   _scheduleReconnect(){
     if(this._reconnecting||this._destroyed) return;
+    const _rcNow=Date.now();if(_rcNow-this._lastReconnectAt<800)return;this._lastReconnectAt=_rcNow;
     if(this._reconnectAttempts>=CFG.RECONNECT_MAX){
       App.log.warn('Max reconnect attempts reached — manual retry needed');
       return;
@@ -3307,6 +3313,10 @@ class PeerManager {
    FILE TRANSFER ENGINE
 ═══════════════════════════════════════════════════════ */
 class FileTransfer {
+  static MAX_CHUNK_RETRIES=3;
+  async _sha256hex(buf){
+    try{const ab=buf instanceof ArrayBuffer?buf:(buf.arrayBuffer?await buf.arrayBuffer():buf);const h=await crypto.subtle.digest('SHA-256',ab);return Array.from(new Uint8Array(h)).map(b=>b.toString(16).padStart(2,'0')).join('');}catch(e){return '';}
+  }
   constructor(){
     this._sends=new Map();
     this._recvs=new Map();
@@ -3522,6 +3532,7 @@ class FileTransfer {
       const blob=new Blob(parts,{type:state.mime||'application/octet-stream'});
       const url=URL.createObjectURL(blob);
       this._doneTxDownload(tid,state.name,url);
+      Timers.timeout('ft-revoke-'+tid,()=>URL.revokeObjectURL(url),60000);
       App.toast.show(`Received: ${state.name}`,'success');
       App.notifCenter.add('File Received',state.name,'📥','success');
       App.auto?.fire('file-recv',{name:state.name,size:state.size});
@@ -3896,7 +3907,10 @@ class MediaManager {
     }).catch(()=>{});
   }
 
-  async _acquireWakeLock(){try{if(navigator.wakeLock)this._wakeLock=await navigator.wakeLock.request('screen');}catch(e){}}
+  async _acquireWakeLock(){
+    if(!this._visWLHandler){this._visWLHandler=()=>{if(document.visibilityState==='visible'&&!this._wakeLock)this._acquireWakeLock().catch(()=>{});};document.addEventListener('visibilitychange',this._visWLHandler);}
+    try{if(navigator.wakeLock)this._wakeLock=await navigator.wakeLock.request('screen');}catch(e){}
+  }
   _releaseWakeLock(){try{this._wakeLock?.release();this._wakeLock=null;}catch(e){}}
 
   _showAudioVis(stream,show=true){
@@ -4600,7 +4614,7 @@ class VaultManager {
       const hmac=await crypto.subtle.sign('HMAC',key,buf);
       const view=new DataView(hmac);
       const offset=view.getUint8(19)&0xf;
-      const code=(view.getUint32(offset,false)&0x7fffffff)%1000000;
+      const code=(view.getUint32(offset,false)&0x7fffffff)%6000000;
       return String(code).padStart(6,'0');
     } catch(e){return '------';}
   }
@@ -4702,7 +4716,7 @@ class RCManager {
    DEVICE CONTROL MANAGER (DevLab)
 ═══════════════════════════════════════════════════════ */
 class DeviceControlMgr {
-  constructor(){this._devices=new Map();}
+  constructor(){this._devices=new Map();this._wakeLock=null;this._visWLHandler=null;}
   init(){
     document.getElementById('btn-dev-refresh')?.addEventListener('click',()=>this._buildGrid());
     this._buildGrid();
@@ -4753,7 +4767,7 @@ class DeviceControlMgr {
           break;
         }
         case 'network-info':{
-          const c=navigator.connection;
+          const c=navigator.connection||navigator.mozConnection||navigator.webkitConnection;
           if(!c){this.update(id,'API not available',false);return;}
           this.update(id,`${c.effectiveType} ↓${c.downlink}Mbps`,true,`RTT: ${c.rtt}ms`);
           break;
@@ -4814,9 +4828,10 @@ class DeviceControlMgr {
    AUTOMATION ENGINE
 ═══════════════════════════════════════════════════════ */
 class AutomationEngine {
-  constructor(){this._rules=[];}
+  constructor(){this._rules=[];this._inited=false;}
 
   init(){
+    if(this._inited)return;this._inited=true;
     this._rules=SafeStorage.getJSON('dh-auto-rules',[]);
     document.getElementById('btn-auto-add')?.addEventListener('click',()=>this._addRule());
     this._renderRules();
@@ -4888,6 +4903,7 @@ class SensorManager {
 
   reqMotion(){
     if(typeof DeviceMotionEvent==='undefined'){App.toast.show('Motion sensors not supported','warning');return;}
+    if(this._motionH){window.removeEventListener('devicemotion',this._motionH);this._motionH=null;}
     this._motionH=e=>{
       setEl('s-ax',e.acceleration?.x?.toFixed(2)||'—');
       setEl('s-ay',e.acceleration?.y?.toFixed(2)||'—');
@@ -4908,7 +4924,7 @@ class SensorManager {
       err=>App.toast.show('GPS: '+err.message,'warning'),
       {enableHighAccuracy:true,maximumAge:5000}
     );
-    // Fix 31: store orientation handler reference
+    if(this._oriH){window.removeEventListener('deviceorientation',this._oriH);this._oriH=null;}
     this._oriH=e=>{setEl('s-ori',`α:${(e.alpha||0).toFixed(1)}° β:${(e.beta||0).toFixed(1)}° γ:${(e.gamma||0).toFixed(1)}°`);};
     window.addEventListener('deviceorientation',this._oriH);
     App.toast.show('GPS started','success');
@@ -4984,6 +5000,7 @@ class QREngine {
   }
 
   async startScan(){
+    if(this._scanning){App.toast.show('QR scan already active','info');return;}
     if(typeof jsQR==='undefined'){App.toast.show('QR scanner loading…','info');return;}
     Modal.hide('qr-modal');
     const ov=document.getElementById('qr-scan-ov'); if(!ov) return;
@@ -6021,15 +6038,43 @@ class SmartRecommendationEngine {
     if(quality==='bad'||quality==='poor'){
       App.toast.show('Weak connection detected — switched to low bandwidth mode','warning');
     }
-    if(Timers._i.size>60){
+    if(Timers._i.size>40){
       App.toast.show('Timer accumulation detected — auto-cleaning…','warning');
       App.healer.repairTimers();
     }
-    if(performance.memory&&performance.memory.usedJSHeapSize>300*1048576){
+    if(performance.memory&&performance.memory.usedJSHeapSize>250*1048576){
       App.toast.show('High memory usage — cleaning up logs…','warning');
       App.log.clear();
     }
   }
+}
+
+/* ═══════════════════════════════════════════════════════
+   BLOB URL REGISTRY — prevent object URL memory leaks
+═══════════════════════════════════════════════════════ */
+const BlobURLs={
+  _s:new Set(),
+  create(b){const u=URL.createObjectURL(b);this._s.add(u);return u;},
+  revoke(u){if(this._s.has(u)){URL.revokeObjectURL(u);this._s.delete(u);}},
+  revokeAll(){this._s.forEach(u=>URL.revokeObjectURL(u));this._s.clear();},
+  size(){return this._s.size;}
+};
+
+/* ═══════════════════════════════════════════════════════
+   LIFECYCLE MANAGER — formal start/stop/cleanup/destroy
+═══════════════════════════════════════════════════════ */
+class LifecycleManager{
+  constructor(){this._reg=new Map();this._dead=new Set();}
+  register(n,{start,stop,cleanup,destroy}={}){
+    this._reg.set(n,{start:start||null,stop:stop||null,cleanup:cleanup||null,destroy:destroy||null,running:false});
+  }
+  async startFeature(n){const f=this._reg.get(n);if(!f||f.running)return;try{if(f.start)await f.start();f.running=true;}catch(e){try{App.log?.error('LC.start['+n+']: '+e.message);}catch(ex){}}}
+  async stopFeature(n){const f=this._reg.get(n);if(!f||!f.running)return;try{if(f.stop)await f.stop();f.running=false;}catch(e){}}
+  async cleanupFeature(n){const f=this._reg.get(n);if(!f)return;try{if(f.cleanup)await f.cleanup();}catch(e){}}
+  async destroyFeature(n){const f=this._reg.get(n);if(!f)return;try{if(f.running&&f.stop)await f.stop();if(f.cleanup)await f.cleanup();if(f.destroy)await f.destroy();}catch(e){}this._reg.delete(n);this._dead.add(n);}
+  async destroyAll(){for(const n of[...this._reg.keys()])await this.destroyFeature(n);}
+  isRunning(n){return this._reg.get(n)?.running||false;}
+  list(){return[...this._reg.entries()].map(([n,f])=>({name:n,running:f.running}));}
 }
 
 /* ═══════════════════════════════════════════════════════
@@ -6147,6 +6192,19 @@ class BootManager {
     safeInit('NFC',()=>App.nfc.init());
     safeInit('CamBridge',()=>App.camBridge.init());
     safeInit('Snapshot',()=>App.snapshot.load());
+
+    // Browser capability: gracefully disable unsupported device API buttons
+    (()=>{
+      const _dis=(ids,tip)=>ids.forEach(id=>{const el=document.getElementById(id);if(el){el.disabled=true;el.title=tip;el.style.opacity='0.42';el.style.cursor='not-allowed';}});
+      if(!navigator.hid)_dis(['btn-hid-request'],'WebHID not available (Chrome/Edge only)');
+      if(!navigator.bluetooth)_dis(['btn-ble-scan'],'Web Bluetooth not available in this browser');
+      if(!navigator.usb)_dis(['btn-usb-request'],'WebUSB not available in this browser');
+      if(!navigator.serial)_dis(['btn-serial-connect'],'Web Serial requires Chrome/Edge + HTTPS');
+      if(!navigator.requestMIDIAccess)_dis(['btn-midi-request'],'Web MIDI not available in this browser');
+      if(!('NDEFReader' in window))_dis(['btn-nfc-scan','btn-nfc-write'],'Web NFC not available in this browser');
+      if(!navigator.mediaDevices?.getUserMedia)_dis(['btn-cam-start','btn-cam-snapshot','btn-cam-record'],'MediaDevices not available');
+      if(!navigator.geolocation)_dis(['btn-gps'],'Geolocation not supported');
+    })();
     safeInit('BootRecovery',()=>{App.bootRecovery.checkBootFailure();App.bootRecovery.restoreSessionSnapshot();});
 
     await this._setProgress(75,'Initializing adaptive resources…');
@@ -6199,16 +6257,13 @@ class BootManager {
     if('serviceWorker' in navigator){
       try {
         const swCode=`
-          const CACHE='devhub-v1';
+          const CACHE='devhub-v2';const _KEEP=['devhub-v2'];
           self.addEventListener('install',e=>{
-            e.waitUntil(caches.open(CACHE).then(c=>c.addAll([location.pathname||'/'])));
+            e.waitUntil(caches.open(CACHE).then(c=>c.addAll([self.location.pathname||'/'])));
             self.skipWaiting();
           });
-          self.addEventListener('activate',e=>{e.waitUntil(self.clients.claim());});
-          self.addEventListener('fetch',e=>{
-            if(e.request.method!=='GET')return;
-            e.respondWith(caches.match(e.request).then(r=>r||fetch(e.request)));
-          });
+          self.addEventListener('activate',e=>{e.waitUntil(caches.keys().then(ks=>Promise.all(ks.filter(k=>!_KEEP.includes(k)).map(k=>caches.delete(k)))).then(()=>self.clients.claim()));});
+          self.addEventListener('fetch',e=>{if(e.request.method!=='GET')return;e.respondWith(caches.match(e.request).then(r=>{if(r)return r;return fetch(e.request).then(rs=>{if(rs&&rs.status===200&&rs.type==='basic'){const rc=rs.clone();caches.open(CACHE).then(c=>c.put(e.request,rc));}return rs;}).catch(()=>r);}));});
         `;
         const blob=new Blob([swCode],{type:'application/javascript'});
         const swUrl=URL.createObjectURL(blob);
@@ -6481,7 +6536,7 @@ class AppDoctor {
       this._check('Peer Connected',()=>typeof App.peer?.myId==='string'&&App.peer.myId.length>0),
       this._check('Network Online',()=>navigator.onLine),
       this._check('Storage OK',async()=>{SafeStorage.set('_test','1');return SafeStorage.get('_test')===1||SafeStorage.get('_test')==='1';}),
-      this._check('Timer Health',()=>Timers._i.size<100),
+      this._check('Timer Health',()=>Timers._i.size<40),
       this._check('Memory OK',()=>!performance.memory||performance.memory.usedJSHeapSize<400*1048576),
       this._check('WebSocket Available',()=>typeof WebSocket!=='undefined'),
       this._check('ServiceWorker Available',()=>'serviceWorker' in navigator),
@@ -6491,7 +6546,7 @@ class AppDoctor {
       this._check('Web MIDI Available',()=>!!navigator.requestMIDIAccess),
       this._check('WebHID Available',()=>!!navigator.hid),
       this._check('Gamepad API',()=>!!navigator.getGamepads),
-      this._check('Web NFC Available',()=>!!'NDEFReader' in window),
+      this._check('Web NFC Available',()=>typeof NDEFReader!=='undefined'),
       this._check('Wake Lock Available',()=>!!navigator.wakeLock),
     ]);
     this._lastReport=checks.map((r,i)=>r.status==='fulfilled'?r.value:{name:'Check '+i,ok:false,msg:'Exception'});
@@ -6875,8 +6930,9 @@ class SerialManager {
    MIDI MANAGER — Web MIDI API
 ═══════════════════════════════════════════════════════ */
 class MidiManager {
-  constructor(){this._access=null;this._inputs=new Map();this._outputs=new Map();}
+  constructor(){this._access=null;this._inputs=new Map();this._outputs=new Map();this._inited=false;}
   init(){
+    if(this._inited)return;this._inited=true;
     if(!navigator.requestMIDIAccess){setEl('midi-inputs-list','Web MIDI not supported (requires Chrome/Edge)');}
     document.getElementById('btn-midi-request')?.addEventListener('click',()=>this.requestAccess());
     document.getElementById('btn-midi-stop')?.addEventListener('click',()=>this.stop());
@@ -7181,15 +7237,9 @@ const App = {
   nfc: new NFCManager(),
   camBridge: new CameraBridgeManager(),
 };
+App.lifecycle = new LifecycleManager();
 
-// Global error boundary — basic fallback (GlobalErrorManager handles details)
-window.addEventListener('error',e=>{
-  try{App.log.error('Uncaught: '+(e.message||'unknown error'));}catch(ex){}
-});
-window.addEventListener('unhandledrejection',e=>{
-  try{App.log.warn('Unhandled rejection: '+(e.reason?.message||String(e.reason)));}catch(ex){}
-  e.preventDefault();
-});
+// Global error boundary delegated to GlobalErrorManager.init()
 
 // Boot — Fix B: confirm _CDN_LOAD exists before calling
 if(typeof window._CDN_LOAD==='function'){
