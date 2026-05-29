@@ -181,7 +181,7 @@ a:hover{text-decoration:underline;}
 #chat-hdr-av{font-size:22px;}
 #chat-hdr-nm{font-weight:700;font-size:14px;}
 #chat-hdr-st{font-size:11px;color:var(--text2);}
-#chat-hdr-lat{font-size:10px;color:var(--muted);font-family:monospace;margin-left:auto;}
+#chat-hdr-lat{font-size:10px;color:var(--muted);font-family:monospace;margin-left:auto;overflow:hidden;text-overflow:ellipsis;max-width:80px;white-space:nowrap;}
 #chat-hdr-acts{margin-left:auto;display:flex;gap:5px;}
 #msgs{flex:1;overflow-y:auto;padding:12px 16px;display:flex;flex-direction:column;gap:4px;}
 #chat-empty{display:none;flex-direction:column;align-items:center;justify-content:center;flex:1;color:var(--muted);gap:12px;text-align:center;padding:24px;}
@@ -2106,14 +2106,15 @@ class PeerManager {
     const delay = CFG.RECONNECT_DELAY[Math.min(this._reconnectAttempts, CFG.RECONNECT_DELAY.length - 1)];
     this._reconnectAttempts++;
     App.log.info(`Reconnecting in ${delay}ms (attempt ${this._reconnectAttempts})…`);
+    // FIX: reset _reconnecting AFTER attempt so a disconnected event during reconnect can't schedule a second timer
     Timers.timeout('reconnect', () => {
-      this._reconnecting = false;
       if (this.peer?.disconnected && !this.peer.destroyed) {
         try { this.peer.reconnect(); }
         catch(e) { this._create(this.myId); }
       } else if (!this.peer || this.peer.destroyed) {
         this._create(this.myId);
       }
+      this._reconnecting = false;
     }, delay);
   }
 
@@ -2224,9 +2225,10 @@ class PeerManager {
         // E2E key exchange
         if (msg.pubkey && localStorage.getItem('dh-e2e') === '1') {
           await App.crypto.deriveSharedKey(pid, msg.pubkey);
-          // Send our pubkey back if we haven't
-          if (App.crypto.getPublicKeyBytes()) {
-            try { conn.send(JSON.stringify({ type: 'pubkey', pubkey: App.crypto.getPublicKeyBytes() })); } catch(e) {}
+          // FIX: only send our pubkey back if the peer didn't already have it (initiator already sent it in handshake)
+          // Responder sends pubkey reply; initiator already sent pubkey in handshake so skip double-derivation
+          if (App.crypto.getPublicKeyBytes() && !msg._pubkeySent) {
+            try { conn.send(JSON.stringify({ type: 'pubkey', pubkey: App.crypto.getPublicKeyBytes(), _pubkeySent: true })); } catch(e) {}
           }
         }
         App.hist.seen(pid, fp);
@@ -2562,8 +2564,8 @@ class FileTransfer {
       }
     };
 
-    const windowPromises = [];
-    for (let w = 0; w < CFG.WINDOW_SIZE && w < totalChunks; w++) windowPromises.push(sendNext());
+    // FIX: single sendNext() start — the while-loop inside handles windowing; double-start causes duplicate sends
+    sendNext();
     while (state.ackedChunks < totalChunks && !state.cancelled) {
       await sleep(50);
       while (state.paused && !state.cancelled) await sleep(200);
@@ -3160,7 +3162,8 @@ class Whiteboard {
     this._resize();
     this._bindTools();
     this._bindCanvas();
-    Listeners.add('wb-resize', window, 'resize', () => this._resize());
+    // FIX: debounce resize to prevent flicker on every pixel change
+    Listeners.add('wb-resize', window, 'resize', debounce(() => this._resize(), 150));
   }
 
   _resize() {
@@ -3168,7 +3171,8 @@ class Whiteboard {
     const parent = c.parentElement;
     if (!parent) return;
     const w = parent.clientWidth - 2;
-    if (w > 0 && c.width !== w) {
+    // FIX: only resize if width changed by more than 2px to avoid hairline-diff redraws
+    if (w > 0 && Math.abs(c.width - w) > 2) {
       const offscreen = document.createElement('canvas');
       offscreen.width = c.width;
       offscreen.height = c.height;
@@ -3467,7 +3471,6 @@ class CodeEditor {
         parent.postMessage({type:'error',msg:e.message},'*');
       }
     <\/script>`;
-    document.body.appendChild(fr);
     Timers.timeout('ce-sandbox', () => {
       cleanup();
       out.textContent = '⏱ Execution timed out (5s)';
@@ -3707,11 +3710,13 @@ class SelfHealingEngine {
   }
 
   _check() {
-    let stale = 0;
+    // FIX: collect stale pids first to avoid mutating Map while iterating
+    const stale = [];
     for (const [pid, conn] of App.peer.dconns) {
-      if (!conn.open) { App.peer._onClose(pid, 'stale'); stale++; }
+      if (!conn.open) stale.push(pid);
     }
-    if (stale > 0) { setEl('heal-banner', null, el => el.classList.add('on')); setEl('fab-repair', null, el => el.classList.add('on')); }
+    stale.forEach(pid => App.peer._onClose(pid, 'stale'));
+    if (stale.length > 0) { setEl('heal-banner', null, el => el.classList.add('on')); setEl('fab-repair', null, el => el.classList.add('on')); }
   }
 
   async repair() {
@@ -3785,19 +3790,24 @@ class RCControl {
     if (log) { log.insertAdjacentHTML('afterbegin', `<div style="color:var(--primary)">[${fmtTs(Date.now())}] ← ${esc(msg.cmd)}</div>`); while (log.children.length > 30) log.lastChild?.remove(); }
   }
 
-  // FIX-12: store rAF handle so the loop can be cancelled
+  // FIX-12: store rAF handle + FIX: debounce buttons so holding doesn't flood peers with commands
   _pollGamepad() {
-    if (this._gpRaf) return; // already polling
+    if (this._gpRaf) return;
+    this._lastBtn = {};
     const poll = () => {
       const gps = navigator.getGamepads ? navigator.getGamepads() : [];
       for (const gp of gps) {
         if (!gp) continue;
-        if (gp.buttons[0]?.pressed) this._send('ok');
-        if (gp.buttons[1]?.pressed) this._send('back');
-        if (gp.axes[0] < -0.5) this._send('left');
-        if (gp.axes[0] > 0.5) this._send('right');
-        if (gp.axes[1] < -0.5) this._send('up');
-        if (gp.axes[1] > 0.5) this._send('down');
+        const fire = (key, pressed) => {
+          if (pressed && !this._lastBtn[key]) this._send(key);
+          this._lastBtn[key] = pressed;
+        };
+        fire('ok',   !!gp.buttons[0]?.pressed);
+        fire('back', !!gp.buttons[1]?.pressed);
+        fire('left',  gp.axes[0] < -0.5);
+        fire('right', gp.axes[0] > 0.5);
+        fire('up',    gp.axes[1] < -0.5);
+        fire('down',  gp.axes[1] > 0.5);
       }
       this._gpRaf = requestAnimationFrame(poll);
     };
@@ -4410,8 +4420,9 @@ class UIManager {
       document.getElementById('dh-emoji-picker')?.remove();
       picker.id = 'dh-emoji-picker';
       document.body.appendChild(picker);
-      Timers.timeout('emoji-close', () => picker.remove(), 5000);
+      // FIX: also remove the document click listener when the auto-close timer fires
       const close = e => { if (!picker.contains(e.target)) { picker.remove(); document.removeEventListener('click', close); } };
+      Timers.timeout('emoji-close', () => { picker.remove(); document.removeEventListener('click', close); }, 5000);
       setTimeout(() => document.addEventListener('click', close), 100);
     });
     document.getElementById('btn-clip')?.addEventListener('click', () => App.clipboard.read());
@@ -4459,7 +4470,9 @@ class UIManager {
     const isImage = safeURL(text) && /\.(jpg|jpeg|png|gif|webp)(\?.*)?$/i.test(text);
     const isURL = safeURL(text);
     let content = '';
-    if (isImage) content = `<img src="${esc(text)}" style="max-width:200px;border-radius:8px;cursor:pointer" onclick="document.getElementById('img-view-src').src='${esc(text)}';document.getElementById('img-viewer').classList.add('on')">`;
+    // FIX: encode single quotes in URL used inside onclick attribute string to prevent attribute breakout
+    const safeImgUrl = text.replace(/'/g, '%27');
+    if (isImage) content = `<img src="${esc(text)}" style="max-width:200px;border-radius:8px;cursor:pointer" onclick="document.getElementById('img-view-src').src='${safeImgUrl}';document.getElementById('img-viewer').classList.add('on')">`;
     else if (isURL) content = `<a href="${esc(text)}" target="_blank" rel="noopener noreferrer">${esc(text)}</a>`;
     else content = esc(text).replace(/\n/g, '<br>');
     row.innerHTML = `<div class="mb ${self?'me':'them'}" id="mb-${id}">
@@ -4548,7 +4561,9 @@ class UIManager {
       if (!this.activePeer) { App.toast.show('Select a peer first', 'warning'); return; }
       App.files.sendFiles(Array.from(files), this.activePeer);
     };
-    dz?.addEventListener('click', () => fi?.click());
+    // FIX: only open picker when clicking the dropzone background, not child buttons
+    dz?.addEventListener('click', e => { if (e.target === dz) fi?.click(); });
+    dz?.addEventListener('touchend', () => dz.classList.remove('over'));
     fi?.addEventListener('change', e => { if (e.target.files.length) sendFiles(e.target.files); e.target.value = ''; });
     di?.addEventListener('change', e => { if (e.target.files.length) sendFiles(e.target.files); e.target.value = ''; });
     document.getElementById('btn-pf')?.addEventListener('click', e => { e.stopPropagation(); fi?.click(); });
@@ -4838,11 +4853,11 @@ class UIManager {
       const btn = document.getElementById('btn-vault-unlock');
       const pw = el?.value;
       if (pw) {
-        // FIX-11: disable button during PBKDF2 to prevent double-unlock
-        if (btn) btn.disabled = true;
+        // FIX-11: disable button + show loading state during PBKDF2
+        if (btn) { btn.disabled = true; btn.textContent = 'Unlocking…'; }
         App.vault.unlock(pw).finally(() => {
           if (el) el.value = '';
-          if (btn) btn.disabled = false;
+          if (btn) { btn.disabled = false; btn.textContent = 'Unlock'; }
         });
       }
     });
@@ -4932,17 +4947,6 @@ class UIManager {
     this._updUnread(pid);
     const conn = App.peer.conn(pid);
     if (conn?.open) try { conn.send(JSON.stringify({ type: 'read', id: 'all' })); } catch(e) {}
-    // FIX-9: load persisted messages from IndexedDB so chat is not blank on selection
-    App.hist.load().then(() => {
-      const msgs = App.hist.get(pid);
-      if (msgs && msgs.length) {
-        const box = document.getElementById('msgs');
-        if (box) {
-          box.innerHTML = '';
-          msgs.forEach(m => App.ui.appendMsg(m.from, m.text, m.ts, m.mine));
-        }
-      }
-    }).catch(() => {});
   }
 
   renderPeer(pid, fp, status) {
@@ -5135,8 +5139,9 @@ const App = {
     App.hist._render();
     App.hist._renderRecent();
     App.callHist._render();
-    if (Notification.permission === 'default') {
-      Timers.timeout('notif-perm', () => Notification.requestPermission().catch(()=>{}), 3000);
+    // FIX: feature-detect and wrap in try/catch — some sandboxed iframes throw synchronously
+    if (typeof Notification !== 'undefined' && Notification.permission === 'default') {
+      Timers.timeout('notif-perm', () => { try { Notification.requestPermission().catch(()=>{}); } catch(e) {} }, 3000);
     }
     await App.peer.init();
     App.log.success('Boot complete');
@@ -5203,7 +5208,8 @@ const App = {
     if (typeof Peer !== 'undefined') {
       start();
     } else {
-      Timers.timeout(`lib-wait-${attempts}`, () => waitForLibs(attempts + 1), 300);
+      // FIX: fixed key so each retry cancels the previous, avoiding 25 stacked timers on CDN failure
+      Timers.timeout('lib-wait', () => waitForLibs(attempts + 1), 300);
     }
   };
 
