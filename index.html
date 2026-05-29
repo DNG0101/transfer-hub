@@ -396,6 +396,62 @@ select{appearance:none;-webkit-appearance:none;background-image:url("data:image/
 #code-editor-area{width:100%;flex:1;min-height:280px;resize:vertical;font-size:13px;font-family:monospace;line-height:1.6;tab-size:2;}
 /* PERMS PANEL */
 #perms-panel{position:fixed;bottom:80px;right:16px;background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);z-index:3000;width:280px;box-shadow:var(--shadow);}
+
+/* ── UNIVERSAL REMOTE HUB ──────────────────────────── */
+.rc-mode-tabs{display:flex;gap:4px;flex-wrap:wrap;margin-bottom:14px;border-bottom:1px solid var(--border);padding-bottom:8px;}
+.rc-mode-btn{padding:5px 10px;border-radius:var(--radius-sm);border:1px solid var(--border);background:var(--bg3);color:var(--text2);font-size:12px;cursor:pointer;transition:all .15s;white-space:nowrap;}
+.rc-mode-btn.active{background:var(--primary);color:#fff;border-color:var(--primary);}
+.rc-mode-panel{display:none;}
+.rc-mode-panel.on{display:block;}
+.rc-capability-notice{background:rgba(99,102,241,.12);border:1px solid var(--primary);border-radius:var(--radius-sm);padding:8px 12px;font-size:12px;color:var(--primary);margin-bottom:12px;}
+.rc-capability-notice.warn{background:rgba(245,158,11,.12);border-color:var(--yellow);color:var(--yellow);}
+/* TV Remote */
+.tv-remote-body{display:flex;flex-direction:column;align-items:center;gap:12px;max-width:260px;margin:0 auto;}
+.tv-dpad{display:grid;grid-template-columns:repeat(3,52px);grid-template-rows:repeat(3,52px);gap:4px;}
+.tv-dpad button{width:52px;height:52px;border-radius:var(--radius-sm);font-size:18px;}
+.tv-dpad-center{border-radius:50%!important;}
+.tv-num-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:4px;width:100%;}
+.tv-num-grid button{padding:10px 0;font-size:14px;font-weight:600;}
+/* PC Trackpad */
+#pc-trackpad{width:100%;height:200px;background:var(--bg3);border:2px solid var(--border);border-radius:12px;cursor:crosshair;touch-action:none;position:relative;user-select:none;}
+#pc-trackpad:active{border-color:var(--primary);}
+.trackpad-hint{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:12px;pointer-events:none;}
+.pc-btns{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:8px;}
+#vkb-container{margin-top:10px;}
+.vkb-row{display:flex;gap:3px;margin-bottom:3px;justify-content:center;}
+.vkb-key{min-width:28px;height:32px;padding:0 4px;font-size:11px;border-radius:4px;background:var(--bg3);border:1px solid var(--border);color:var(--text);cursor:pointer;transition:all .1s;display:flex;align-items:center;justify-content:center;}
+.vkb-key:active{background:var(--primary);color:#fff;transform:scale(.92);}
+.vkb-key.vkb-wide{min-width:56px;}
+.vkb-key.vkb-wider{min-width:84px;}
+.vkb-key.vkb-widest{min-width:140px;}
+/* Gyro/Air Remote */
+#gyro-canvas{width:120px;height:120px;border-radius:50%;background:var(--bg3);border:2px solid var(--border);display:block;margin:0 auto 10px;}
+.gyro-status{text-align:center;font-size:12px;color:var(--muted);margin-bottom:8px;}
+/* Presentation Remote */
+.pres-btns{display:grid;grid-template-columns:1fr 1fr;gap:8px;max-width:280px;margin:0 auto;}
+.pres-btns button{padding:16px 0;font-size:22px;}
+.pres-btn-full{grid-column:1/-1;}
+/* RC status bar */
+#rc-statusbar{background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius-sm);padding:6px 10px;font-size:11px;color:var(--muted);margin-top:10px;min-height:28px;}
+/* Meeting controls */
+.meeting-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;max-width:300px;margin:0 auto 10px;}
+.meeting-grid button{padding:14px 6px;font-size:20px;flex-direction:column;gap:3px;display:flex;align-items:center;justify-content:center;}
+.meeting-btn-label{font-size:10px;}
+/* Media remote */
+.media-remote-body{max-width:280px;margin:0 auto;}
+#media-vol-slider{width:100%;margin:8px 0;}
+.media-row{display:flex;gap:6px;justify-content:center;margin-bottom:8px;}
+.media-row button{min-width:44px;height:44px;font-size:18px;}
+.media-row button.media-main{min-width:60px;height:60px;font-size:26px;}
+/* Camera remote */
+.cam-remote-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;max-width:280px;margin:0 auto;}
+.cam-remote-grid button{padding:14px 0;font-size:18px;}
+/* AR placeholder */
+.ar-placeholder{text-align:center;padding:24px;background:var(--bg3);border-radius:var(--radius);border:1px solid var(--border);}
+.ar-placeholder .ar-icon{font-size:48px;margin-bottom:8px;}
+/* Receiver mode */
+.rc-receiver-mode{background:rgba(99,102,241,.08);border:1px solid var(--primary);border-radius:var(--radius);padding:12px;margin-bottom:12px;}
+.rc-receiver-badge{display:inline-flex;align-items:center;gap:6px;background:var(--primary);color:#fff;border-radius:10px;padding:2px 10px;font-size:11px;font-weight:700;}
 </style>
 </head>
 <body>
@@ -785,32 +841,310 @@ select{appearance:none;-webkit-appearance:none;background-image:url("data:image/
   </div>
 </div>
 
-<!-- RC TAB -->
+<!-- RC TAB — Universal Remote Hub -->
 <div class="tabview" id="tab-rc">
-  <div style="font-size:13px;font-weight:700;margin-bottom:8px">Remote Control — <span id="rc-peer">No peer</span></div>
-  <div class="notice">Control your peer's device with these commands.</div>
-  <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;max-width:200px;margin:0 auto 16px">
-    <div></div><button class="btn btn-s" id="rc-up">▲</button><div></div>
-    <button class="btn btn-s" id="rc-left">◀</button><button class="btn btn-p" id="rc-ok">OK</button><button class="btn btn-s" id="rc-right">▶</button>
-    <div></div><button class="btn btn-s" id="rc-down">▼</button><div></div>
+  <!-- Header: peer + receiver indicator -->
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;flex-wrap:wrap;gap:6px">
+    <div style="font-size:13px;font-weight:700">🎮 Universal Remote — <span id="rc-peer">No peer</span></div>
+    <div style="display:flex;gap:5px;align-items:center">
+      <div id="rc-receiver-badge" style="display:none" class="rc-receiver-badge">📡 Receiver active</div>
+      <button class="btn btn-xs btn-s" id="rc-toggle-receiver" title="Toggle receiver mode">⚙️ Receiver</button>
+    </div>
   </div>
-  <div style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:12px">
-    <button class="btn btn-s btn-xs" id="rc-home">🏠</button>
-    <button class="btn btn-s btn-xs" id="rc-back">↩</button>
-    <button class="btn btn-s btn-xs" id="rc-menu">☰</button>
-    <button class="btn btn-s btn-xs" id="rc-vup">🔊+</button>
-    <button class="btn btn-s btn-xs" id="rc-vdn">🔊-</button>
-    <button class="btn btn-s btn-xs" id="rc-mute-rc">🔇</button>
-    <button class="btn btn-s btn-xs" id="rc-play">▶</button>
-    <button class="btn btn-s btn-xs" id="rc-pause">⏸</button>
-    <button class="btn btn-s btn-xs" id="rc-next">⏭</button>
-    <button class="btn btn-s btn-xs" id="rc-prev">⏮</button>
+  <!-- Receiver mode panel (shown when this device is being remotely controlled) -->
+  <div id="rc-receiver-panel" class="rc-receiver-mode" style="display:none">
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+      <span class="rc-receiver-badge">📡 Receiver Mode</span>
+      <span style="font-size:11px;color:var(--text2)">This device accepts remote commands</span>
+    </div>
+    <div id="rc-receiver-log" style="font-size:11px;color:var(--muted);max-height:60px;overflow:auto"></div>
   </div>
-  <div style="display:flex;gap:6px">
-    <input id="rc-custom-inp" placeholder="Custom command…" style="flex:1">
-    <button class="btn btn-p btn-sm" id="rc-custom-send">Send</button>
+  <!-- Mode selector tabs -->
+  <div class="rc-mode-tabs" id="rc-mode-tabs">
+    <button class="rc-mode-btn active" data-mode="tv">📺 TV</button>
+    <button class="rc-mode-btn" data-mode="pc">🖥️ PC</button>
+    <button class="rc-mode-btn" data-mode="presentation">📊 Present</button>
+    <button class="rc-mode-btn" data-mode="meeting">💼 Meeting</button>
+    <button class="rc-mode-btn" data-mode="media">🎵 Media</button>
+    <button class="rc-mode-btn" data-mode="camera">📷 Camera</button>
+    <button class="rc-mode-btn" data-mode="gyro">🌀 Gyro</button>
+    <button class="rc-mode-btn" data-mode="ar">🥽 AR</button>
   </div>
-  <div id="rc-status" style="margin-top:10px;font-size:11px;color:var(--muted)"></div>
+
+  <!-- ── TV REMOTE ──────────────────────────────── -->
+  <div class="rc-mode-panel on" id="rc-panel-tv">
+    <div class="rc-capability-notice" id="rc-tv-notice">📺 Sends TV commands via P2P to a DevHub receiver. For smart TVs with browser casting, pair first.</div>
+    <div class="tv-remote-body">
+      <!-- Power + Input row -->
+      <div style="display:flex;gap:6px;width:100%;justify-content:center">
+        <button class="btn btn-d btn-sm" id="rc-tv-power">⏻ Power</button>
+        <button class="btn btn-s btn-sm" id="rc-tv-input">🔀 Input</button>
+        <button class="btn btn-s btn-sm" id="rc-tv-guide">📋 Guide</button>
+      </div>
+      <!-- D-pad -->
+      <div class="tv-dpad">
+        <div></div>
+        <button class="btn btn-s tv-dpad-up" id="rc-up">▲</button>
+        <div></div>
+        <button class="btn btn-s tv-dpad-left" id="rc-left">◀</button>
+        <button class="btn btn-p tv-dpad-center" id="rc-ok">OK</button>
+        <button class="btn btn-s tv-dpad-right" id="rc-right">▶</button>
+        <div></div>
+        <button class="btn btn-s tv-dpad-down" id="rc-down">▼</button>
+        <div></div>
+      </div>
+      <!-- Nav row -->
+      <div style="display:flex;gap:5px;justify-content:center;flex-wrap:wrap">
+        <button class="btn btn-s btn-xs" id="rc-home">🏠 Home</button>
+        <button class="btn btn-s btn-xs" id="rc-back">↩ Back</button>
+        <button class="btn btn-s btn-xs" id="rc-menu">☰ Menu</button>
+        <button class="btn btn-s btn-xs" id="rc-info">ℹ️ Info</button>
+      </div>
+      <!-- Volume + Channel -->
+      <div style="display:flex;gap:5px;justify-content:center;flex-wrap:wrap">
+        <button class="btn btn-s btn-xs" id="rc-vup">🔊+</button>
+        <button class="btn btn-s btn-xs" id="rc-vdn">🔊-</button>
+        <button class="btn btn-s btn-xs" id="rc-mute-rc">🔇 Mute</button>
+        <button class="btn btn-s btn-xs" id="rc-chup">📺+</button>
+        <button class="btn btn-s btn-xs" id="rc-chdn">📺-</button>
+      </div>
+      <!-- Playback controls -->
+      <div style="display:flex;gap:5px;justify-content:center;flex-wrap:wrap">
+        <button class="btn btn-s btn-xs" id="rc-prev">⏮</button>
+        <button class="btn btn-g btn-xs" id="rc-play">▶</button>
+        <button class="btn btn-s btn-xs" id="rc-pause">⏸</button>
+        <button class="btn btn-s btn-xs" id="rc-stop">⏹</button>
+        <button class="btn btn-s btn-xs" id="rc-next">⏭</button>
+      </div>
+      <!-- Number pad -->
+      <div class="tv-num-grid" style="max-width:160px">
+        <button class="btn btn-s btn-xs" data-tvnum="1" id="rc-num1">1</button>
+        <button class="btn btn-s btn-xs" data-tvnum="2" id="rc-num2">2</button>
+        <button class="btn btn-s btn-xs" data-tvnum="3" id="rc-num3">3</button>
+        <button class="btn btn-s btn-xs" data-tvnum="4" id="rc-num4">4</button>
+        <button class="btn btn-s btn-xs" data-tvnum="5" id="rc-num5">5</button>
+        <button class="btn btn-s btn-xs" data-tvnum="6" id="rc-num6">6</button>
+        <button class="btn btn-s btn-xs" data-tvnum="7" id="rc-num7">7</button>
+        <button class="btn btn-s btn-xs" data-tvnum="8" id="rc-num8">8</button>
+        <button class="btn btn-s btn-xs" data-tvnum="9" id="rc-num9">9</button>
+        <button class="btn btn-s btn-xs" id="rc-num-dash">—</button>
+        <button class="btn btn-s btn-xs" data-tvnum="0" id="rc-num0">0</button>
+        <button class="btn btn-s btn-xs" id="rc-num-enter">↵</button>
+      </div>
+      <!-- Custom -->
+      <div style="display:flex;gap:6px;width:100%">
+        <input id="rc-custom-inp" placeholder="Custom command…" style="flex:1;font-size:12px">
+        <button class="btn btn-p btn-sm" id="rc-custom-send">Send</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── PC REMOTE ──────────────────────────────── -->
+  <div class="rc-mode-panel" id="rc-panel-pc">
+    <div class="rc-capability-notice">🖥️ Phone as PC mouse/keyboard via WebRTC. Receiver PC must have DevHub open and Receiver mode enabled.</div>
+    <div style="font-size:12px;font-weight:700;margin-bottom:6px">Trackpad</div>
+    <div id="pc-trackpad">
+      <div class="trackpad-hint">Move finger to control cursor · Tap to click</div>
+    </div>
+    <div class="pc-btns">
+      <button class="btn btn-s" id="pc-lclick">👆 Left Click</button>
+      <button class="btn btn-s" id="pc-rclick">👆 Right Click</button>
+      <button class="btn btn-s" id="pc-dblclick">👆👆 Double Click</button>
+      <button class="btn btn-s" id="pc-scroll-up">🖱️ Scroll ↑</button>
+      <button class="btn btn-s" id="pc-scroll-dn">🖱️ Scroll ↓</button>
+      <button class="btn btn-s" id="pc-middle">⚪ Middle</button>
+    </div>
+    <div style="font-size:12px;font-weight:700;margin:10px 0 6px">Hotkeys</div>
+    <div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:8px">
+      <button class="btn btn-s btn-xs" data-hotkey="copy">📋 Copy</button>
+      <button class="btn btn-s btn-xs" data-hotkey="paste">📋 Paste</button>
+      <button class="btn btn-s btn-xs" data-hotkey="undo">↩️ Undo</button>
+      <button class="btn btn-s btn-xs" data-hotkey="redo">↪️ Redo</button>
+      <button class="btn btn-s btn-xs" data-hotkey="save">💾 Save</button>
+      <button class="btn btn-s btn-xs" data-hotkey="selectall">🔲 Sel All</button>
+      <button class="btn btn-s btn-xs" data-hotkey="fullscreen">⛶ Full</button>
+      <button class="btn btn-s btn-xs" data-hotkey="screenshot">📸 SS</button>
+      <button class="btn btn-s btn-xs" data-hotkey="lock">🔒 Lock</button>
+      <button class="btn btn-s btn-xs" data-hotkey="alt-tab">⇥ Alt+Tab</button>
+      <button class="btn btn-s btn-xs" data-hotkey="close">✕ Close</button>
+      <button class="btn btn-d btn-xs" data-hotkey="sleep">💤 Sleep</button>
+    </div>
+    <div style="font-size:12px;font-weight:700;margin-bottom:6px">Virtual Keyboard</div>
+    <button class="btn btn-s btn-xs" id="pc-vkb-toggle" style="margin-bottom:6px">⌨️ Show Keyboard</button>
+    <div id="vkb-container" style="display:none"></div>
+    <div style="display:flex;gap:6px;margin-top:8px">
+      <input id="pc-type-inp" placeholder="Type text to send…" style="flex:1;font-size:12px">
+      <button class="btn btn-p btn-sm" id="pc-type-send">⌨️ Send</button>
+    </div>
+  </div>
+
+  <!-- ── PRESENTATION REMOTE ─────────────────────── -->
+  <div class="rc-mode-panel" id="rc-panel-presentation">
+    <div class="rc-capability-notice">📊 Control slides on the connected peer's screen. Also works with browser-based presentations via page scroll.</div>
+    <div class="pres-btns">
+      <button class="btn btn-p pres-btn-full" id="pres-start">▶ Start Presentation</button>
+      <button class="btn btn-s" style="font-size:32px;padding:20px" id="pres-prev">⬅️</button>
+      <button class="btn btn-s" style="font-size:32px;padding:20px" id="pres-next">➡️</button>
+      <button class="btn btn-s" id="pres-blank">⬛ Blank</button>
+      <button class="btn btn-s" id="pres-laser">🔴 Laser</button>
+      <button class="btn btn-s" id="pres-zoom-in">🔍+ Zoom In</button>
+      <button class="btn btn-s" id="pres-zoom-out">🔍- Zoom Out</button>
+      <button class="btn btn-s" id="pres-annotate">✏️ Annotate</button>
+      <button class="btn btn-d" id="pres-end">⏹ End</button>
+    </div>
+    <div style="margin-top:12px">
+      <div style="font-size:11px;color:var(--muted);margin-bottom:4px">Slide #</div>
+      <div style="display:flex;gap:6px">
+        <input type="number" id="pres-goto-num" placeholder="Slide #" min="1" style="width:80px;font-size:13px">
+        <button class="btn btn-s btn-sm" id="pres-goto">Go</button>
+      </div>
+    </div>
+    <div style="margin-top:10px;display:flex;gap:6px">
+      <div class="ii" style="flex:1"><div class="ik">Slide</div><div class="iv" id="pres-slide-num">—</div></div>
+      <div class="ii" style="flex:1"><div class="ik">Timer</div><div class="iv" id="pres-timer">0:00</div></div>
+    </div>
+  </div>
+
+  <!-- ── MEETING REMOTE ──────────────────────────── -->
+  <div class="rc-mode-panel" id="rc-panel-meeting">
+    <div class="rc-capability-notice">💼 Control meeting features on the connected peer. Works with Zoom, Meet, Teams when DevHub receiver tab is focused.</div>
+    <div class="meeting-grid">
+      <button class="btn btn-s" id="meet-mute"><span>🎤</span><span class="meeting-btn-label">Mute</span></button>
+      <button class="btn btn-s" id="meet-video"><span>📹</span><span class="meeting-btn-label">Video</span></button>
+      <button class="btn btn-s" id="meet-share"><span>🖥️</span><span class="meeting-btn-label">Share</span></button>
+      <button class="btn btn-s" id="meet-hand"><span>✋</span><span class="meeting-btn-label">Raise Hand</span></button>
+      <button class="btn btn-s" id="meet-chat"><span>💬</span><span class="meeting-btn-label">Chat</span></button>
+      <button class="btn btn-s" id="meet-record"><span>⏺</span><span class="meeting-btn-label">Record</span></button>
+      <button class="btn btn-s" id="meet-react-👍"><span>👍</span><span class="meeting-btn-label">React</span></button>
+      <button class="btn btn-s" id="meet-react-😀"><span>😀</span><span class="meeting-btn-label">Smile</span></button>
+      <button class="btn btn-d" id="meet-leave"><span>📵</span><span class="meeting-btn-label">Leave</span></button>
+    </div>
+    <div class="sep"></div>
+    <div style="font-size:12px;font-weight:700;margin-bottom:6px">Volume</div>
+    <div style="display:flex;align-items:center;gap:8px">
+      <span>🔈</span>
+      <input type="range" id="meet-vol" min="0" max="100" value="80" style="flex:1">
+      <span>🔊</span>
+      <span id="meet-vol-lbl" style="font-size:11px;min-width:30px;font-family:monospace">80%</span>
+    </div>
+  </div>
+
+  <!-- ── MEDIA REMOTE ───────────────────────────── -->
+  <div class="rc-mode-panel" id="rc-panel-media">
+    <div class="rc-capability-notice">🎵 Controls media playback on the connected peer via MediaSession API and browser media controls.</div>
+    <div class="media-remote-body">
+      <div style="text-align:center;margin-bottom:8px">
+        <div id="media-rc-title" style="font-size:13px;font-weight:700;color:var(--primary)">No media info</div>
+        <div id="media-rc-artist" style="font-size:11px;color:var(--text2)">—</div>
+      </div>
+      <!-- Progress bar (read-only) -->
+      <div style="position:relative;height:4px;background:var(--border);border-radius:2px;margin-bottom:8px">
+        <div id="media-rc-progress" style="height:100%;background:var(--primary);border-radius:2px;width:0%;transition:width .5s"></div>
+      </div>
+      <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--muted);margin-bottom:8px">
+        <span id="media-rc-pos">0:00</span><span id="media-rc-dur">0:00</span>
+      </div>
+      <div class="media-row">
+        <button class="btn btn-s" id="media-shuffle">🔀</button>
+        <button class="btn btn-s" id="media-prev-track">⏮</button>
+        <button class="btn btn-p media-main" id="media-play-pause">▶</button>
+        <button class="btn btn-s" id="media-next-track">⏭</button>
+        <button class="btn btn-s" id="media-repeat">🔁</button>
+      </div>
+      <div class="media-row">
+        <button class="btn btn-s btn-xs" id="media-seek-back">⏪ -10s</button>
+        <button class="btn btn-s btn-xs" id="media-seek-fwd">+10s ⏩</button>
+        <button class="btn btn-s btn-xs" id="media-fullscreen">⛶</button>
+        <button class="btn btn-s btn-xs" id="media-pip">📺 PiP</button>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;margin-top:8px">
+        <span>🔈</span>
+        <input type="range" id="media-vol-slider" min="0" max="100" value="80">
+        <span>🔊</span>
+        <span id="media-vol-lbl" style="font-size:11px;min-width:30px;font-family:monospace">80%</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── CAMERA REMOTE ──────────────────────────── -->
+  <div class="rc-mode-panel" id="rc-panel-camera">
+    <div class="rc-capability-notice">📷 Control the camera on the connected peer device remotely. Requires DevHub Camera Bridge on the receiver.</div>
+    <div class="cam-remote-grid">
+      <button class="btn btn-p" id="cam-rc-start">📷 Start Cam</button>
+      <button class="btn btn-d" id="cam-rc-stop">⏹ Stop Cam</button>
+      <button class="btn btn-s" id="cam-rc-snapshot">📸 Snapshot</button>
+      <button class="btn btn-s" id="cam-rc-flip">🔄 Flip</button>
+      <button class="btn btn-s" id="cam-rc-record">⏺ Record</button>
+      <button class="btn btn-s" id="cam-rc-stream">📡 Stream Here</button>
+      <button class="btn btn-s" id="cam-rc-torch">🔦 Torch</button>
+      <button class="btn btn-s" id="cam-rc-zoom-in">🔍+ Zoom</button>
+      <button class="btn btn-s" id="cam-rc-zoom-out">🔍- Zoom</button>
+      <button class="btn btn-s" id="cam-rc-autofocus">🎯 Focus</button>
+    </div>
+    <div class="sep"></div>
+    <div style="font-size:12px;font-weight:700;margin-bottom:6px">Capture Settings</div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap">
+      <select id="cam-rc-res" style="font-size:12px">
+        <option value="hd">720p HD</option>
+        <option value="fhd">1080p FHD</option>
+        <option value="sd">480p SD</option>
+        <option value="qhd">1440p QHD</option>
+      </select>
+      <select id="cam-rc-fps" style="font-size:12px">
+        <option value="30">30 fps</option>
+        <option value="60">60 fps</option>
+        <option value="24">24 fps</option>
+        <option value="15">15 fps</option>
+      </select>
+    </div>
+  </div>
+
+  <!-- ── GYRO / AIR REMOTE ──────────────────────── -->
+  <div class="rc-mode-panel" id="rc-panel-gyro">
+    <div class="rc-capability-notice" id="gyro-cap-notice">🌀 Tilt your phone to control cursor/scroll on the connected peer. Requires motion permission on this device.</div>
+    <canvas id="gyro-canvas" width="120" height="120"></canvas>
+    <div class="gyro-status" id="gyro-status">Gyro inactive</div>
+    <div style="display:flex;gap:6px;justify-content:center;margin-bottom:10px">
+      <button class="btn btn-p btn-sm" id="gyro-start">▶ Start Gyro</button>
+      <button class="btn btn-d btn-sm" id="gyro-stop">⏹ Stop</button>
+      <button class="btn btn-s btn-sm" id="gyro-calibrate">🎯 Calibrate</button>
+    </div>
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+      <label style="font-size:12px;min-width:70px">Sensitivity:</label>
+      <input type="range" id="gyro-sens" min="1" max="10" value="5" style="flex:1">
+      <span id="gyro-sens-lbl" style="font-size:11px;font-family:monospace;min-width:20px">5</span>
+    </div>
+    <div style="display:flex;gap:5px;flex-wrap:wrap;justify-content:center">
+      <button class="btn btn-s btn-xs" id="gyro-click">👆 Click</button>
+      <button class="btn btn-s btn-xs" id="gyro-scroll-mode">🖱️ Scroll Mode</button>
+      <button class="btn btn-s btn-xs" id="gyro-pointer-mode">🎯 Pointer Mode</button>
+    </div>
+  </div>
+
+  <!-- ── AR REMOTE (Experimental) ──────────────── -->
+  <div class="rc-mode-panel" id="rc-panel-ar">
+    <div id="ar-main-content">
+      <div class="ar-placeholder" id="ar-placeholder">
+        <div class="ar-icon">🥽</div>
+        <div style="font-weight:700;margin-bottom:6px">AR Remote</div>
+        <div style="font-size:12px;color:var(--muted);margin-bottom:12px">Checking WebXR support…</div>
+        <div id="ar-support-status"></div>
+      </div>
+      <div id="ar-controls" style="display:none">
+        <div class="rc-capability-notice">🥽 AR Immersive Remote — uses WebXR Device API for spatial interaction.</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
+          <button class="btn btn-p" id="ar-start-session">🥽 Enter AR</button>
+          <button class="btn btn-d" id="ar-end-session">✕ Exit AR</button>
+        </div>
+        <div style="font-size:12px;color:var(--text2)">AR gestures: point to move cursor, pinch to click, spread to scroll.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── STATUS BAR ──────────────────────────────── -->
+  <div id="rc-statusbar">Ready — select a peer and mode to begin</div>
+  <!-- Legacy compat: rc-status used by original RCManager._onCmd -->
+  <div id="rc-status" style="display:none"></div>
 </div>
 
 <!-- DEVLAB TAB -->
@@ -1365,6 +1699,7 @@ select{appearance:none;-webkit-appearance:none;background-image:url("data:image/
     <button class="btn btn-s" data-goto="tasks">✅ Tasks</button>
     <button class="btn btn-s" data-goto="notes">📝 Notes</button>
     <button class="btn btn-s" data-goto="vault">🔐 Vault</button>
+    <button class="btn btn-s" data-goto="rc">🎮 Remote</button>
     <button class="btn btn-s" data-goto="settings">⚙️ Settings</button>
     <button class="btn btn-s" data-goto="history">📜 History</button>
     <button class="btn btn-s" data-goto="discover">🌐 Discover</button>
@@ -1483,7 +1818,7 @@ select{appearance:none;-webkit-appearance:none;background-image:url("data:image/
    CONFIG MANAGER — central config, no magic numbers
 ═══════════════════════════════════════════════════════ */
 const CFG = {
-  VERSION: '3.3.0',
+  VERSION: '3.4.0',
   DB_NAME: 'devhub-v4',
   DB_VERSION: 4,
   CHUNK_SIZE: 256 * 1024,
@@ -3259,13 +3594,21 @@ class PeerManager {
         App.presence?.setPeerStatus(pid,msg.status);
         break;
       }
-      case 'rc':App.rc._onCmd(pid,msg);break;
+      case 'rc':
+        // rc-media-state is a special sub-type sent by the receiver back to the sender
+        if(msg.type==='rc'&&msg['type-sub']==='media-state'){App.rc._updateMediaState(msg);break;}
+        // rc-media-state sent with type override (from _startMediaPoller)
+        if(msg.title&&msg.duration!=null&&msg.paused!=null){App.rc._updateMediaState(msg);break;}
+        App.rc._onCmd(pid,msg);
+        break;
       case 'cursor':App.board._onCursor(pid,msg);break;
       case 'uclip':App.uclip.receive(pid,msg.text,msg.hash);break;
     }
   }
 
   _onClose(pid,reason){
+    // Ghost-peer fix: always clean up _settingUp on any close path
+    this._settingUp?.delete(pid);
     this.dconns.delete(pid);
     try{App.connReg?.unregister(pid);}catch(e){}
     try{App.rtcReg?.unregister('call-'+pid);}catch(e){}
@@ -4692,34 +5035,567 @@ class VaultManager {
 }
 
 /* ═══════════════════════════════════════════════════════
-   RC MANAGER — remote control
+   UNIVERSAL REMOTE MANAGER — TV · PC · Presentation · Meeting
+   · Media · Camera · Gyro Air-Mouse · AR
+   All sub-managers delegated here; backward-compat _onCmd kept.
 ═══════════════════════════════════════════════════════ */
 class RCManager {
-  constructor(){this._enabled=false;}
+  constructor(){
+    this._mode = 'tv';
+    this._receiverEnabled = false;
+    this._gyro = null;        // GyroRemoteManager instance
+    this._pres = null;        // PresentationRemoteManager instance
+    this._presTimer = null;
+    this._presSlide = 1;
+    this._presTimerSec = 0;
+    this._mediaInfo = {};
+    this._trackpadActive = false;
+    this._tpLastX = 0; this._tpLastY = 0;
+    this._gyroActive = false;
+    this._gyroBaseAlpha = null; this._gyroBaseBeta = null; this._gyroBaseGamma = null;
+    this._gyroSens = 5;
+    this._gyroScrollMode = false;
+    this._gyroHandler = null;
+    this._arSession = null;
+  }
+
   init(){
-    const cmds=['up','down','left','right','ok','home','back','menu','vup','vdn','mute-rc','play','pause','next','prev'];
-    cmds.forEach(cmd=>{
-      document.getElementById(`rc-${cmd}`)?.addEventListener('click',()=>this._send(cmd));
-    });
+    this._bindModeTabs();
+    this._bindTVRemote();
+    this._bindPCRemote();
+    this._bindPresentationRemote();
+    this._bindMeetingRemote();
+    this._bindMediaRemote();
+    this._bindCameraRemote();
+    this._bindGyroRemote();
+    this._bindARRemote();
+    this._bindReceiverToggle();
+    this._buildVirtualKeyboard();
+    this._checkARSupport();
+    // Legacy custom command
     document.getElementById('rc-custom-send')?.addEventListener('click',()=>{
-      const inp=document.getElementById('rc-custom-inp')?.value.trim();
-      if(inp)this._send(inp);
+      const v=document.getElementById('rc-custom-inp')?.value.trim();
+      if(v) this._send('tv-custom',{text:v});
     });
   }
 
-  _send(cmd){
+  /* ── Mode tabs ─────────────────────────────────── */
+  _bindModeTabs(){
+    document.querySelectorAll('.rc-mode-btn').forEach(btn=>{
+      btn.addEventListener('click',()=>{
+        const mode=btn.dataset.mode;
+        if(!mode) return;
+        this._mode = mode;
+        document.querySelectorAll('.rc-mode-btn').forEach(b=>b.classList.toggle('active',b.dataset.mode===mode));
+        document.querySelectorAll('.rc-mode-panel').forEach(p=>p.classList.toggle('on',p.id===`rc-panel-${mode}`));
+        this._setStatus(`Mode: ${mode.toUpperCase()}`);
+      });
+    });
+  }
+
+  /* ── TV Remote ─────────────────────────────────── */
+  _bindTVRemote(){
+    const cmds=['up','down','left','right','ok','home','back','menu','vup','vdn','mute-rc','play','pause','stop','next','prev','chup','chdn'];
+    cmds.forEach(c=>document.getElementById(`rc-${c}`)?.addEventListener('click',()=>this._send('tv',{cmd:c})));
+    ['power','input','guide','info'].forEach(c=>document.getElementById(`rc-tv-${c}`)?.addEventListener('click',()=>this._send('tv',{cmd:c})));
+    document.querySelectorAll('[data-tvnum]').forEach(btn=>btn.addEventListener('click',()=>this._send('tv',{cmd:'num',val:btn.dataset.tvnum})));
+    document.getElementById('rc-num-dash')?.addEventListener('click',()=>this._send('tv',{cmd:'num',val:'-'}));
+    document.getElementById('rc-num-enter')?.addEventListener('click',()=>this._send('tv',{cmd:'num-enter'}));
+  }
+
+  /* ── PC Remote ─────────────────────────────────── */
+  _bindPCRemote(){
+    const tp=document.getElementById('pc-trackpad');
+    if(tp){
+      let lastX=0,lastY=0,down=false;
+      const getXY=(e)=>{
+        if(e.touches) return {x:e.touches[0].clientX,y:e.touches[0].clientY};
+        return {x:e.clientX,y:e.clientY};
+      };
+      const onStart=(e)=>{e.preventDefault();down=true;const p=getXY(e);lastX=p.x;lastY=p.y;};
+      const onMove=(e)=>{
+        e.preventDefault();if(!down)return;
+        const p=getXY(e);
+        const dx=Math.round((p.x-lastX)*this._gyroSens*0.4);
+        const dy=Math.round((p.y-lastY)*this._gyroSens*0.4);
+        lastX=p.x;lastY=p.y;
+        if(dx!==0||dy!==0) this._send('pc',{cmd:'mousemove',dx,dy});
+      };
+      const onEnd=(e)=>{e.preventDefault();down=false;};
+      tp.addEventListener('pointerdown',onStart,{passive:false});
+      tp.addEventListener('pointermove',onMove,{passive:false});
+      tp.addEventListener('pointerup',onEnd);
+      tp.addEventListener('pointercancel',onEnd);
+      // Tap = click (short press, no movement)
+      let tapT=0;
+      tp.addEventListener('pointerdown',()=>{tapT=Date.now();});
+      tp.addEventListener('pointerup',()=>{if(Date.now()-tapT<200)this._send('pc',{cmd:'click',btn:'left'});});
+    }
+    ['lclick','rclick','dblclick','scroll-up','scroll-dn','middle'].forEach(c=>{
+      document.getElementById(`pc-${c}`)?.addEventListener('click',()=>{
+        const map={lclick:{cmd:'click',btn:'left'},rclick:{cmd:'click',btn:'right'},dblclick:{cmd:'dblclick',btn:'left'},'scroll-up':{cmd:'scroll',dir:'up'},'scroll-dn':{cmd:'scroll',dir:'down'},middle:{cmd:'click',btn:'middle'}};
+        this._send('pc',map[c]);
+      });
+    });
+    document.querySelectorAll('[data-hotkey]').forEach(btn=>{
+      btn.addEventListener('click',()=>this._send('pc',{cmd:'hotkey',key:btn.dataset.hotkey}));
+    });
+    document.getElementById('pc-type-send')?.addEventListener('click',()=>{
+      const v=document.getElementById('pc-type-inp')?.value;
+      if(v){this._send('pc',{cmd:'type',text:v});document.getElementById('pc-type-inp').value='';}
+    });
+    document.getElementById('pc-vkb-toggle')?.addEventListener('click',()=>{
+      const c=document.getElementById('vkb-container');
+      if(!c) return;
+      const shown=c.style.display!=='none';
+      c.style.display=shown?'none':'block';
+      setEl('pc-vkb-toggle',shown?'⌨️ Show Keyboard':'⌨️ Hide Keyboard');
+    });
+  }
+
+  /* ── Virtual Keyboard ──────────────────────────── */
+  _buildVirtualKeyboard(){
+    const c=document.getElementById('vkb-container');
+    if(!c) return;
+    const rows=[
+      ['`','1','2','3','4','5','6','7','8','9','0','-','=',{k:'Backspace',w:'vkb-wider',l:'⌫'}],
+      [{k:'Tab',w:'vkb-wide',l:'Tab'},'q','w','e','r','t','y','u','i','o','p','[',']','\\'],
+      [{k:'CapsLock',w:'vkb-wider',l:'Caps'},'a','s','d','f','g','h','j','k','l',';',"'",{k:'Enter',w:'vkb-wider',l:'↵'}],
+      [{k:'Shift',w:'vkb-widest',l:'⇧'},'z','x','c','v','b','n','m',',','.','/'],
+      [{k:'Space',w:'vkb-widest',l:'Space'}],
+    ];
+    c.innerHTML=rows.map(row=>`<div class="vkb-row">${row.map(k=>{
+      const isObj=typeof k==='object';
+      const key=isObj?k.k:k;
+      const lbl=isObj?(k.l||k.k):k;
+      const w=isObj&&k.w?` ${k.w}`:'';
+      return `<button class="vkb-key${w}" data-vkbkey="${esc(key)}">${esc(lbl)}</button>`;
+    }).join('')}</div>`).join('');
+    c.querySelectorAll('.vkb-key').forEach(btn=>{
+      btn.addEventListener('click',()=>this._send('pc',{cmd:'key',key:btn.dataset.vkbkey}));
+    });
+  }
+
+  /* ── Presentation Remote ───────────────────────── */
+  _bindPresentationRemote(){
+    document.getElementById('pres-next')?.addEventListener('click',()=>{this._presSlide++;this._sendPres('next');});
+    document.getElementById('pres-prev')?.addEventListener('click',()=>{if(this._presSlide>1)this._presSlide--;this._sendPres('prev');});
+    document.getElementById('pres-start')?.addEventListener('click',()=>{this._presSlide=1;this._presTimerSec=0;this._startPresTimer();this._sendPres('start');});
+    document.getElementById('pres-end')?.addEventListener('click',()=>{this._stopPresTimer();this._sendPres('end');});
+    document.getElementById('pres-blank')?.addEventListener('click',()=>this._sendPres('blank'));
+    document.getElementById('pres-laser')?.addEventListener('click',()=>this._sendPres('laser'));
+    document.getElementById('pres-zoom-in')?.addEventListener('click',()=>this._sendPres('zoom-in'));
+    document.getElementById('pres-zoom-out')?.addEventListener('click',()=>this._sendPres('zoom-out'));
+    document.getElementById('pres-annotate')?.addEventListener('click',()=>this._sendPres('annotate'));
+    document.getElementById('pres-goto')?.addEventListener('click',()=>{
+      const n=parseInt(document.getElementById('pres-goto-num')?.value)||1;
+      this._presSlide=n;this._sendPres('goto',{slide:n});
+    });
+    // Keyboard shortcuts for presentation mode
+    document.addEventListener('keydown',(e)=>{
+      if(document.getElementById('tab-rc')?.classList.contains('on')&&this._mode==='presentation'){
+        if(e.key==='ArrowRight'||e.key==='PageDown'||e.key===' '){e.preventDefault();document.getElementById('pres-next')?.click();}
+        else if(e.key==='ArrowLeft'||e.key==='PageUp'){e.preventDefault();document.getElementById('pres-prev')?.click();}
+        else if(e.key==='Escape'){document.getElementById('pres-end')?.click();}
+      }
+    });
+  }
+  _sendPres(cmd,extra={}){
+    this._send('presentation',{cmd,...extra});
+    setEl('pres-slide-num',this._presSlide);
+  }
+  _startPresTimer(){
+    this._stopPresTimer();
+    this._presTimer=setInterval(()=>{
+      this._presTimerSec++;
+      setEl('pres-timer',fmtDur(this._presTimerSec*1000));
+    },1000);
+  }
+  _stopPresTimer(){if(this._presTimer){clearInterval(this._presTimer);this._presTimer=null;}}
+
+  /* ── Meeting Remote ────────────────────────────── */
+  _bindMeetingRemote(){
+    const actions=['mute','video','share','hand','chat','record','leave'];
+    actions.forEach(a=>document.getElementById(`meet-${a}`)?.addEventListener('click',()=>this._send('meeting',{cmd:a})));
+    ['👍','😀'].forEach(r=>document.getElementById(`meet-react-${r}`)?.addEventListener('click',()=>this._send('meeting',{cmd:'react',emoji:r})));
+    const volEl=document.getElementById('meet-vol');
+    const volLbl=document.getElementById('meet-vol-lbl');
+    if(volEl){
+      volEl.addEventListener('input',()=>{
+        if(volLbl)volLbl.textContent=volEl.value+'%';
+        this._send('meeting',{cmd:'volume',val:parseInt(volEl.value)});
+      });
+    }
+  }
+
+  /* ── Media Remote ──────────────────────────────── */
+  _bindMediaRemote(){
+    const btns={
+      'media-play-pause':{cmd:'play-pause'},'media-prev-track':{cmd:'prev'},'media-next-track':{cmd:'next'},
+      'media-shuffle':{cmd:'shuffle'},'media-repeat':{cmd:'repeat'},'media-seek-back':{cmd:'seek',delta:-10},
+      'media-seek-fwd':{cmd:'seek',delta:10},'media-fullscreen':{cmd:'fullscreen'},'media-pip':{cmd:'pip'},
+    };
+    Object.entries(btns).forEach(([id,data])=>{
+      document.getElementById(id)?.addEventListener('click',()=>this._send('media',{...data}));
+    });
+    const volEl=document.getElementById('media-vol-slider');
+    const volLbl=document.getElementById('media-vol-lbl');
+    if(volEl){
+      volEl.addEventListener('input',()=>{
+        if(volLbl)volLbl.textContent=volEl.value+'%';
+        this._send('media',{cmd:'volume',val:parseInt(volEl.value)});
+      });
+    }
+  }
+
+  /* ── Camera Remote ─────────────────────────────── */
+  _bindCameraRemote(){
+    const cmds={
+      'cam-rc-start':'start','cam-rc-stop':'stop','cam-rc-snapshot':'snapshot',
+      'cam-rc-flip':'flip','cam-rc-record':'record','cam-rc-stream':'stream-here',
+      'cam-rc-torch':'torch','cam-rc-zoom-in':'zoom-in','cam-rc-zoom-out':'zoom-out',
+      'cam-rc-autofocus':'autofocus',
+    };
+    Object.entries(cmds).forEach(([id,cmd])=>{
+      document.getElementById(id)?.addEventListener('click',()=>{
+        const res=document.getElementById('cam-rc-res')?.value||'hd';
+        const fps=document.getElementById('cam-rc-fps')?.value||'30';
+        this._send('camera',{cmd,res,fps});
+      });
+    });
+  }
+
+  /* ── Gyro Air-Mouse ────────────────────────────── */
+  _bindGyroRemote(){
+    document.getElementById('gyro-sens')?.addEventListener('input',e=>{
+      this._gyroSens=parseInt(e.target.value)||5;
+      setEl('gyro-sens-lbl',this._gyroSens);
+    });
+    document.getElementById('gyro-start')?.addEventListener('click',()=>this._startGyro());
+    document.getElementById('gyro-stop')?.addEventListener('click',()=>this._stopGyro());
+    document.getElementById('gyro-calibrate')?.addEventListener('click',()=>{
+      this._gyroBaseAlpha=null;this._gyroBaseBeta=null;this._gyroBaseGamma=null;
+      this._setStatus('Gyro calibrated — move device to set baseline');
+    });
+    document.getElementById('gyro-click')?.addEventListener('click',()=>this._send('pc',{cmd:'click',btn:'left'}));
+    document.getElementById('gyro-scroll-mode')?.addEventListener('click',()=>{
+      this._gyroScrollMode=true;this._setStatus('Gyro: scroll mode');
+    });
+    document.getElementById('gyro-pointer-mode')?.addEventListener('click',()=>{
+      this._gyroScrollMode=false;this._setStatus('Gyro: pointer mode');
+    });
+  }
+  _startGyro(){
+    if(typeof DeviceOrientationEvent==='undefined'){App.toast.show('Gyroscope not supported','warning');return;}
+    if(typeof DeviceOrientationEvent.requestPermission==='function'){
+      DeviceOrientationEvent.requestPermission().then(s=>{
+        if(s==='granted')this._attachGyro();
+        else App.toast.show('Motion permission denied','warning');
+      }).catch(()=>App.toast.show('Permission request failed','warning'));
+    } else {
+      this._attachGyro();
+    }
+  }
+  _attachGyro(){
+    if(this._gyroHandler) window.removeEventListener('deviceorientation',this._gyroHandler);
+    let lastSend=0;
+    this._gyroHandler=e=>{
+      if(!e.alpha&&!e.beta&&!e.gamma){setEl('gyro-status','No gyro data');return;}
+      if(this._gyroBaseAlpha===null){this._gyroBaseAlpha=e.alpha;this._gyroBaseBeta=e.beta;this._gyroBaseGamma=e.gamma;}
+      const da=((e.alpha-this._gyroBaseAlpha+540)%360)-180;
+      const db=e.beta-this._gyroBaseBeta;
+      const dg=e.gamma-this._gyroBaseGamma;
+      setEl('gyro-status',`α:${da.toFixed(1)}° β:${db.toFixed(1)}° γ:${dg.toFixed(1)}°`);
+      this._drawGyroBall(dg,db);
+      const now=Date.now();
+      if(now-lastSend>50){
+        lastSend=now;
+        const s=this._gyroSens*0.6;
+        if(this._gyroScrollMode) this._send('pc',{cmd:'scroll',dir:db>0?'down':'up',amt:Math.abs(Math.round(db*s*0.1))});
+        else this._send('pc',{cmd:'mousemove',dx:Math.round(dg*s),dy:Math.round(db*s)});
+      }
+    };
+    window.addEventListener('deviceorientation',this._gyroHandler);
+    this._gyroActive=true;
+    setEl('gyro-status','Gyro active — tilt to control');
+    App.toast.show('Gyro remote started','success');
+  }
+  _stopGyro(){
+    if(this._gyroHandler){window.removeEventListener('deviceorientation',this._gyroHandler);this._gyroHandler=null;}
+    this._gyroActive=false;
+    setEl('gyro-status','Gyro inactive');
+  }
+  _drawGyroBall(x,y){
+    const c=document.getElementById('gyro-canvas');
+    if(!c) return;
+    const ctx=c.getContext('2d');
+    const W=c.width,H=c.height,R=W/2;
+    ctx.clearRect(0,0,W,H);
+    // Background circle
+    ctx.beginPath();ctx.arc(R,R,R-4,0,Math.PI*2);ctx.fillStyle='var(--bg3,#1e1e2e)';ctx.fill();
+    ctx.strokeStyle='var(--border,#333)';ctx.lineWidth=2;ctx.stroke();
+    // Crosshair
+    ctx.strokeStyle='rgba(99,102,241,.3)';ctx.lineWidth=1;
+    ctx.beginPath();ctx.moveTo(R,4);ctx.lineTo(R,H-4);ctx.stroke();
+    ctx.beginPath();ctx.moveTo(4,R);ctx.lineTo(W-4,R);ctx.stroke();
+    // Ball position
+    const clamp=(v,min,max)=>Math.max(min,Math.min(max,v));
+    const bx=clamp(R+x*2,10,W-10),by=clamp(R+y*2,10,H-10);
+    ctx.beginPath();ctx.arc(bx,by,10,0,Math.PI*2);
+    ctx.fillStyle='#6366f1';ctx.fill();
+  }
+
+  /* ── AR Remote ─────────────────────────────────── */
+  _bindARRemote(){
+    document.getElementById('ar-start-session')?.addEventListener('click',()=>this._startAR());
+    document.getElementById('ar-end-session')?.addEventListener('click',()=>this._endAR());
+  }
+  _checkARSupport(){
+    const statusEl=document.getElementById('ar-support-status');
+    const ctrlEl=document.getElementById('ar-controls');
+    const phEl=document.getElementById('ar-placeholder');
+    if(!statusEl) return;
+    if(navigator.xr){
+      navigator.xr.isSessionSupported('immersive-ar').then(supported=>{
+        if(supported){
+          statusEl.innerHTML='<span style="color:var(--green)">✅ WebXR AR supported</span>';
+          if(ctrlEl)ctrlEl.style.display='block';
+          if(phEl)phEl.style.display='none';
+        } else {
+          statusEl.innerHTML='<span style="color:var(--yellow)">⚠️ WebXR present but AR not supported on this device</span>';
+          this._showARFallback(statusEl);
+        }
+      }).catch(()=>{statusEl.innerHTML='<span style="color:var(--red)">❌ AR check failed</span>';this._showARFallback(statusEl);});
+    } else {
+      statusEl.innerHTML='<span style="color:var(--red)">❌ WebXR not available — AR requires Chrome 81+ on Android or Safari 15.4+ on iOS</span>';
+      this._showARFallback(statusEl);
+    }
+  }
+  _showARFallback(el){
+    el.insertAdjacentHTML('afterend','<div style="margin-top:10px;font-size:12px;color:var(--muted)">AR Remote is experimental. Use the Gyro mode for motion-based control on unsupported devices.</div>');
+  }
+  async _startAR(){
+    if(!navigator.xr){App.toast.show('WebXR not available','warning');return;}
+    try{
+      this._arSession=await navigator.xr.requestSession('immersive-ar',{requiredFeatures:['hit-test']});
+      App.toast.show('AR session started','success');
+      this._setStatus('AR: active');
+      this._arSession.addEventListener('end',()=>{this._arSession=null;this._setStatus('AR: ended');});
+    }catch(e){App.toast.show('AR: '+e.message,'error');}
+  }
+  _endAR(){
+    if(this._arSession){try{this._arSession.end();}catch(e){}this._arSession=null;}
+    this._setStatus('AR: ended');
+  }
+
+  /* ── Receiver mode ─────────────────────────────── */
+  _bindReceiverToggle(){
+    document.getElementById('rc-toggle-receiver')?.addEventListener('click',()=>{
+      this._receiverEnabled=!this._receiverEnabled;
+      const badge=document.getElementById('rc-receiver-badge');
+      const panel=document.getElementById('rc-receiver-panel');
+      if(badge)badge.style.display=this._receiverEnabled?'inline-flex':'none';
+      if(panel)panel.style.display=this._receiverEnabled?'block':'none';
+      setEl('rc-toggle-receiver',this._receiverEnabled?'⚙️ Receiver ON':'⚙️ Receiver');
+      App.toast.show(this._receiverEnabled?'Receiver mode enabled — accepting remote commands':'Receiver mode disabled','info');
+      if(this._receiverEnabled) this._startMediaPoller();
+      else this._stopMediaPoller();
+    });
+  }
+
+  /* ── Media state poller (receiver → sender) ────── */
+  _startMediaPoller(){
+    this._stopMediaPoller();
+    this._mediaPollTimer=setInterval(()=>{
+      const v=document.querySelector('video:not([id*="boot"]),audio');
+      if(!v) return;
+      const info={
+        type:'rc-media-state',
+        title:document.title||'Unknown',
+        artist:document.querySelector('meta[name="author"]')?.content||'',
+        duration:v.duration||0,
+        currentTime:v.currentTime||0,
+        paused:v.paused,
+        volume:Math.round((v.volume||0)*100),
+      };
+      // Broadcast media state to all connected peers
+      App.peer?.dconns?.forEach((conn,pid)=>{
+        if(conn?.open){try{conn.send(JSON.stringify({type:'rc',...info}));}catch(e){}}
+      });
+    },2000);
+  }
+  _stopMediaPoller(){
+    if(this._mediaPollTimer){clearInterval(this._mediaPollTimer);this._mediaPollTimer=null;}
+  }
+
+  /* ── Handle incoming media state from receiver ─── */
+  _updateMediaState(msg){
+    setEl('media-rc-title',msg.title||'Unknown');
+    setEl('media-rc-artist',msg.artist||'—');
+    setEl('media-rc-pos',fmtDur((msg.currentTime||0)*1000));
+    setEl('media-rc-dur',fmtDur((msg.duration||0)*1000));
+    setEl('media-play-pause',msg.paused?'▶':'⏸');
+    const pct=msg.duration>0?Math.round((msg.currentTime/msg.duration)*100):0;
+    const bar=document.getElementById('media-rc-progress');
+    if(bar)bar.style.width=pct+'%';
+    const volEl=document.getElementById('media-vol-slider');
+    const volLbl=document.getElementById('media-vol-lbl');
+    if(volEl&&msg.volume!=null){volEl.value=msg.volume;if(volLbl)volLbl.textContent=msg.volume+'%';}
+  }
+
+  /* ── Dispatch outgoing command ─────────────────── */
+  _send(category, data={}){
     const pid=App.ui.activePeer;
     if(!pid){App.toast.show('Select a peer first','warning');return;}
     const conn=App.peer.conn(pid);
-    if(!conn?.open){App.toast.show('Peer not connected','warning');return;}
-    try{conn.send(JSON.stringify({type:'rc',cmd}));App.log.info(`RC → ${cmd}`);}
-    catch(e){App.toast.show('Send failed','error');}
+    if(!conn?.open){App.toast.show('Peer not connected — reconnect first','warning');return;}
+    const msg=JSON.stringify({type:'rc',category,...data});
+    try{conn.send(msg);}catch(e){App.toast.show('Send failed: '+e.message,'error');return;}
+    App.log.info(`RC[${category}] → ${JSON.stringify(data).slice(0,60)}`);
+    this._setStatus(`Sent: [${category}] ${data.cmd||''}`);
   }
 
+  /* ── Receive incoming command (backward-compat) ── */
   _onCmd(pid,msg){
-    App.toast.show(`RC from ${App.peer.peerName(pid)}: ${msg.cmd}`,'info');
-    App.log.info(`RC cmd from ${pid.substring(0,8)}: ${msg.cmd}`);
-    setEl('rc-status',`Last command from ${App.peer.peerName(pid)}: ${msg.cmd}`);
+    const name=App.peer.peerName(pid);
+    // Update legacy status div (hidden but kept for compat)
+    setEl('rc-status',`Last from ${name}: ${msg.cmd||msg.category||''}`);
+    // Route to receiver handler
+    this._handleReceivedCommand(pid, msg);
+  }
+
+  /* ── Receiver: execute incoming commands ───────── */
+  _handleReceivedCommand(pid, msg){
+    const name=App.peer.peerName(pid);
+    const log=document.getElementById('rc-receiver-log');
+    const ts=fmtTs(Date.now());
+    const summary=`[${ts}] ${name}: ${msg.category||''}${msg.cmd?' → '+msg.cmd:''}`;
+    if(log){
+      const line=document.createElement('div');line.textContent=summary;
+      log.insertBefore(line,log.firstChild);
+      while(log.children.length>20)log.lastChild?.remove();
+    }
+
+    // Only execute if receiver mode is enabled
+    if(!this._receiverEnabled){
+      // Always show what was received even if not in receiver mode
+      this._setStatus(summary);
+      App.toast.show(`RC from ${name}: ${msg.cmd||msg.category||'cmd'}`,'info');
+      App.log.info(`RC cmd from ${pid.substring(0,8)}: ${JSON.stringify(msg).slice(0,80)}`);
+      return;
+    }
+
+    const cat=msg.category||'tv';
+    const cmd=msg.cmd||msg.cmd;
+
+    try{
+      switch(cat){
+        case 'pc': this._execPCCommand(msg); break;
+        case 'media': this._execMediaCommand(msg); break;
+        case 'presentation': this._execPresentationCommand(msg); break;
+        case 'meeting': this._execMeetingCommand(msg); break;
+        case 'camera': this._execCameraCommand(msg); break;
+        default: App.log.info(`RC[${cat}] received: ${JSON.stringify(msg).slice(0,60)}`);
+      }
+    } catch(e){ App.log.warn('RC receive exec: '+e.message); }
+
+    App.log.info(`RC executed[${cat}]: ${cmd}`);
+    this._setStatus(`Executed: [${cat}] ${cmd}`);
+  }
+
+  _execPCCommand(msg){
+    const {cmd} = msg;
+    if(cmd==='scroll'){
+      const amt=(msg.amt||3)*16;
+      window.scrollBy(0, msg.dir==='down'?amt:-amt);
+    } else if(cmd==='fullscreen'){
+      if(!document.fullscreenElement)document.documentElement.requestFullscreen?.();
+      else document.exitFullscreen?.();
+    } else if(cmd==='hotkey'){
+      // Browser-safe hotkeys only
+      const safe={copy:()=>document.execCommand?.('copy'),paste:()=>document.execCommand?.('paste'),selectall:()=>document.execCommand?.('selectAll')};
+      safe[msg.key]?.();
+    }
+    // cursor movement, clicks etc. require a native helper on the receiver side
+  }
+
+  _execMediaCommand(msg){
+    // Try MediaSession / HTMLMediaElement first
+    const {cmd}=msg;
+    if(cmd==='play-pause'){
+      const vids=[...document.querySelectorAll('video,audio')].filter(v=>!v.paused||v.readyState>0);
+      if(vids.length){vids[0].paused?vids[0].play().catch(()=>{}):vids[0].pause();}
+      else if(navigator.mediaSession?.playbackState) {
+        const h=navigator.mediaSession.getActionHandler?.('play')||navigator.mediaSession.getActionHandler?.('pause');
+        h?.();
+      }
+    } else if(cmd==='volume'){
+      document.querySelectorAll('video,audio').forEach(v=>{v.volume=Math.max(0,Math.min(1,(msg.val||80)/100));});
+    } else if(cmd==='seek'){
+      document.querySelectorAll('video').forEach(v=>{v.currentTime=Math.max(0,(v.currentTime||0)+(msg.delta||0));});
+    } else if(cmd==='fullscreen'){
+      const v=document.querySelector('video:not([id*="boot"])');
+      if(v&&!document.fullscreenElement)v.requestFullscreen?.();
+      else document.exitFullscreen?.();
+    } else if(cmd==='pip'){
+      const v=document.querySelector('video');
+      if(v&&document.pictureInPictureEnabled){
+        if(document.pictureInPictureElement)document.exitPictureInPicture?.();
+        else v.requestPictureInPicture?.();
+      }
+    } else if(cmd==='next'&&navigator.mediaSession){
+      navigator.mediaSession.getActionHandler?.('nexttrack')?.();
+    } else if(cmd==='prev'&&navigator.mediaSession){
+      navigator.mediaSession.getActionHandler?.('previoustrack')?.();
+    }
+  }
+
+  _execPresentationCommand(msg){
+    const {cmd}=msg;
+    if(cmd==='next')window.scrollBy(0,window.innerHeight);
+    else if(cmd==='prev')window.scrollBy(0,-window.innerHeight);
+    else if(cmd==='blank'){const ov=document.createElement('div');ov.style.cssText='position:fixed;inset:0;background:#000;z-index:99999;cursor:pointer';ov.onclick=()=>ov.remove();document.body.appendChild(ov);}
+    else if(cmd==='fullscreen'){if(!document.fullscreenElement)document.documentElement.requestFullscreen?.();else document.exitFullscreen?.();}
+    else if(cmd==='goto')window.scrollTo(0,(msg.slide-1)*window.innerHeight);
+  }
+
+  _execMeetingCommand(msg){
+    // Meeting hotkey dispatching — requires receiver to be in the meeting tab/app
+    const {cmd}=msg;
+    const k=(key,ctrl=false,alt=false,shift=false)=>{
+      ['keydown','keyup'].forEach(t=>{
+        const ev=new KeyboardEvent(t,{key,ctrlKey:ctrl,altKey:alt,shiftKey:shift,bubbles:true});
+        document.activeElement?.dispatchEvent(ev)||document.dispatchEvent(ev);
+      });
+    };
+    // Common meeting app shortcuts
+    if(cmd==='mute')k('d',false,false,false);         // Zoom: alt+a or D
+    else if(cmd==='video')k('e',false,false,false);   // Zoom: alt+v or E
+    else if(cmd==='hand')k('y',false,true,false);     // Zoom: alt+y
+    else if(cmd==='leave')k('w',false,true,false);    // Zoom: alt+q
+    else if(cmd==='volume')this._execMediaCommand({cmd:'volume',val:msg.val});
+  }
+
+  _execCameraCommand(msg){
+    const {cmd}=msg;
+    if(cmd==='start')App.camBridge?.start?.();
+    else if(cmd==='stop')App.camBridge?.stop?.();
+    else if(cmd==='snapshot')App.camBridge?.snapshot?.();
+    else if(cmd==='flip')App.camBridge?.switchCamera?.();
+    else if(cmd==='record')App.camBridge?.toggleRecording?.();
+    else if(cmd==='stream-here'){
+      // Stream back to the sender
+      if(App.ui.activePeer) App.camBridge?.streamToPeer?.();
+    }
+    else if(cmd==='torch'){
+      App.camBridge?._stream?.getVideoTracks()[0]?.applyConstraints?.({advanced:[{torch:true}]}).catch(()=>{});
+    }
+  }
+
+  /* ── Status helper ─────────────────────────────── */
+  _setStatus(msg){
+    setEl('rc-statusbar',msg);
+    setEl('rc-status',msg); // compat
   }
 }
 
@@ -4927,6 +5803,10 @@ class SensorManager {
 
   reqGPS(){
     if(!navigator.geolocation){App.toast.show('Geolocation not supported','warning');return;}
+    // Fix: clear existing GPS watcher before creating a new one (prevents duplicate callbacks)
+    if(this._gpsW!=null){navigator.geolocation.clearWatch(this._gpsW);this._gpsW=null;}
+    // Fix: remove existing orientation handler before re-adding (prevents duplicate listeners)
+    if(this._oriH){window.removeEventListener('deviceorientation',this._oriH);this._oriH=null;}
     this._gpsW=navigator.geolocation.watchPosition(
       pos=>{
         const c=pos.coords;
@@ -6655,15 +7535,18 @@ class BootManager {
     // Part 8: PWA Service Worker
     if('serviceWorker' in navigator){
       try {
+        // Fix: cache name tied to CFG.VERSION so stale caches are always evicted on update
+        const SW_CACHE_VERSION=CFG.VERSION.replace(/\./g,'-');
         const swCode=`
-          const CACHE='devhub-v2';const _KEEP=['devhub-v2'];
+          const CACHE='devhub-v${SW_CACHE_VERSION}';const _KEEP=[CACHE];
           self.addEventListener('install',e=>{
             e.waitUntil(caches.open(CACHE).then(c=>c.addAll([self.location.pathname||'/'])));
             self.skipWaiting();
           });
           self.addEventListener('activate',e=>{e.waitUntil(caches.keys().then(ks=>Promise.all(ks.filter(k=>!_KEEP.includes(k)).map(k=>caches.delete(k)))).then(()=>self.clients.claim()));});
           self.addEventListener('fetch',e=>{if(e.request.method!=='GET')return;e.respondWith(caches.match(e.request).then(r=>{if(r)return r;return fetch(e.request).then(rs=>{if(rs&&rs.status===200&&rs.type==='basic'){const rc=rs.clone();caches.open(CACHE).then(c=>c.put(e.request,rc));}return rs;}).catch(()=>r);}));});
-        `;
+        `
+          .replace('${SW_CACHE_VERSION}', SW_CACHE_VERSION);
         const blob=new Blob([swCode],{type:'application/javascript'});
         const swUrl=URL.createObjectURL(blob);
         await navigator.serviceWorker.register(swUrl);
