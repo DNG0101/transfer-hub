@@ -234,6 +234,7 @@ a:hover{text-decoration:underline;}
 ═══════════════════════════════════════════ */
 #callbar{display:none;align-items:center;gap:10px;padding:8px 16px;background:linear-gradient(135deg,#1e1e3a,#0f0f1a);border-top:1px solid var(--border);flex-shrink:0;}
 #callbar.on{display:flex;}
+#callbar-tab{display:flex;align-items:center;gap:10px;padding:8px 16px;background:linear-gradient(135deg,#1e1e3a,#0f0f1a);border:1px solid var(--border);border-radius:var(--radius);margin-bottom:12px;flex-shrink:0;}
 #call-timer{font-family:monospace;font-size:14px;font-weight:700;}
 #call-state-label{font-size:12px;color:var(--text2);}
 #cpeer-lbl{font-weight:700;}
@@ -630,7 +631,7 @@ select{appearance:none;-webkit-appearance:none;background-image:url("data:image/
     <video id="lvid" autoplay muted playsinline style="width:120px;position:absolute;bottom:10px;right:10px;border-radius:8px;border:2px solid var(--border)"></video>
   </div>
   <div id="avis" style="margin-bottom:8px;height:40px;display:none;align-items:center;gap:2px"></div>
-  <div id="callbar">
+  <div id="callbar-tab">
     <div>
       <div style="font-size:12px;color:var(--text2)">With: <b id="cpeer-lbl">—</b></div>
       <div id="call-state-label" style="font-size:11px;color:var(--muted)">No active call</div>
@@ -1090,14 +1091,17 @@ select{appearance:none;-webkit-appearance:none;background-image:url("data:image/
     <div style="font-size:12px;color:var(--text2)">With: <b id="cpeer-lbl2" style="color:var(--text)">—</b></div>
     <div id="call-state-label2" style="font-size:11px;color:var(--muted)">No active call</div>
   </div>
-  <div id="avis"></div>
-  <div class="call-qual" style="margin-left:auto"><span id="call-quality-dot2" class="q-e">●</span><span id="cq-lbl2" style="font-size:10px;color:var(--muted)"></span></div>
-  <div id="call-timer">0:00</div>
-  <span id="recbadge">● REC</span>
+  <div id="avis2" style="height:40px;display:none;align-items:center;gap:2px"></div>
+  <div class="call-qual" style="margin-left:auto">
+    <span id="call-quality-dot2" class="q-e">●</span>
+    <span id="cq-lbl2" style="font-size:10px;color:var(--muted)"></span>
+  </div>
+  <div id="call-timer2" style="font-family:monospace;font-size:14px;font-weight:700">0:00</div>
+  <span id="recbadge2" style="display:none;background:var(--red);color:#fff;border-radius:10px;padding:2px 7px;font-size:10px;font-weight:700">● REC</span>
   <div style="display:flex;gap:5px">
-    <button class="btn btn-xs btn-s" id="btn-mute">🎤</button>
-    <button class="btn btn-xs btn-s" id="btn-vid-off">📹</button>
-    <button class="btn btn-xs btn-d" id="btn-hangup">📵</button>
+    <button class="btn btn-xs btn-s" id="btn-mute2">🎤</button>
+    <button class="btn btn-xs btn-s" id="btn-vid-off2">📹</button>
+    <button class="btn btn-xs btn-d" id="btn-hangup2">📵</button>
   </div>
 </div>
 
@@ -1259,11 +1263,14 @@ select{appearance:none;-webkit-appearance:none;background-image:url("data:image/
    CONFIG
 ═══════════════════════════════════════════ */
 const CFG = {
-  VERSION: '2.1.0',
-  CHUNK_SIZE: 64 * 1024,        // 64 KB chunks
-  MAX_BACKPRESSURE: 16 * 1024 * 1024, // 16 MB
-  MAX_CONCUR_SENDS: 2,          // max parallel file sends
-  FILEREADER_POOL: 4,           // max concurrent FileReader semaphore
+  VERSION: '2.2.0',
+  CHUNK_SIZE: 256 * 1024,
+  MAX_BACKPRESSURE: 8 * 1024 * 1024,
+  MAX_CONCUR_SENDS: 4,
+  FILEREADER_POOL: 6,
+  WINDOW_SIZE: 16,
+  ACK_TIMEOUT_MS: 45000,
+  ACK_RETRY_MAX: 3,
   MAX_MSG_NODES: 500,
   PING_INTERVAL: 15000,
   RECONNECT_DELAY: [1000, 2000, 4000, 8000, 16000, 30000],
@@ -1458,7 +1465,7 @@ class StorageEngine {
       const req = indexedDB.open('devhub-v3', 1);
       req.onupgradeneeded = e => {
         const db = e.target.result;
-        const stores = ['messages','transfers','history','call_history','settings','vault','trusted_peers'];
+        const stores = ['messages','transfers','history','call_history','settings','vault','trusted_peers','msg_queue'];
         stores.forEach(s => { if (!db.objectStoreNames.contains(s)) db.createObjectStore(s, { keyPath: 'id', autoIncrement: s !== 'settings' && s !== 'vault' && s !== 'trusted_peers' }); });
       };
       req.onsuccess = e => { this._db = e.target.result; resolve(); };
@@ -1856,18 +1863,17 @@ class RoomManager {
 class MsgQueue {
   constructor() { this.q = []; }
   async load() {
-    const items = await App.store.getAll('messages');
-    this.q = items.filter(m => m.queued) || [];
+    this.q = await App.store.getAll('msg_queue') || [];
   }
   add(pid, text, id) {
-    this.q.push({ pid, text, id, ts: Date.now(), queued: true });
-    App.store.put('messages', { id, pid, text, ts: Date.now(), queued: true }).catch(() => {});
+    this.q.push({ pid, text, id, ts: Date.now() });
+    App.store.put('msg_queue', { id, pid, text, ts: Date.now() }).catch(() => {});
   }
   flush(pid) {
     const pending = this.q.filter(m => m.pid === pid);
     pending.forEach(m => {
       const sent = App.peer.sendMsg(m.pid, m.text, m.id);
-      if (sent) { this.q = this.q.filter(q => q.id !== m.id); App.store.delete('messages', m.id).catch(() => {}); }
+      if (sent) { this.q = this.q.filter(q => q.id !== m.id); App.store.delete('msg_queue', m.id).catch(() => {}); }
     });
   }
 }
@@ -1994,7 +2000,8 @@ class PeerManager {
     const name = localStorage.getItem('dh-name') || 'Peer';
     const savedId = sessionStorage.getItem('dh-peer-id');
     const idBase = name.toLowerCase().replace(/[^a-z0-9]/g,'').substring(0,8) || 'peer';
-    const myId = savedId || `${idBase}-${TAB_NONCE}`;
+    const freshId = `${idBase}-${TAB_NONCE}-${Date.now().toString(36).slice(-4)}`;
+    const myId = savedId || freshId;
     sessionStorage.setItem('dh-peer-id', myId);
 
     await App.crypto.init();
@@ -2072,10 +2079,11 @@ class PeerManager {
         App.ui?.setStatus('RECONNECTING');
         this._scheduleReconnect();
       } else if (err.type === 'unavailable-id') {
-        // Regenerate ID
-        const newId = `peer-${TAB_NONCE}-${Date.now().toString(36)}`;
+        const base = (localStorage.getItem('dh-name')||'peer').toLowerCase().replace(/[^a-z0-9]/g,'').substring(0,8) || 'peer';
+        const newId = `${base}-${TAB_NONCE}-${Date.now().toString(36)}`;
         sessionStorage.setItem('dh-peer-id', newId);
-        Timers.timeout('id-regen', () => this._create(newId), 500);
+        App.log.warn(`ID conflict, regenerating → ${newId.substring(0,16)}`);
+        Timers.timeout('id-regen', () => this._create(newId), 800);
       }
     });
   }
@@ -2156,6 +2164,11 @@ class PeerManager {
     });
 
     conn.on('data', async data => {
+      if (data instanceof Blob) {
+        const buf = await data.arrayBuffer();
+        App.files._onBinaryChunk(pid, buf);
+        return;
+      }
       if (data instanceof ArrayBuffer || ArrayBuffer.isView(data)) {
         // Binary: file chunk
         App.files._onBinaryChunk(pid, data instanceof ArrayBuffer ? data : data.buffer);
@@ -2301,11 +2314,21 @@ class PeerManager {
         break;
       }
       case 'code': {
-        const ce = document.getElementById('code-editor-area');
-        if (ce && msg.code !== undefined) {
-          ce.value = msg.code;
-          if (msg.lang) { const ls = document.getElementById('ce-lang'); if (ls) ls.value = msg.lang; }
-          App.toast.show(`Code received from ${this.peerName(pid)}`, 'info');
+        if (msg.code !== undefined) {
+          const pname = this.peerName(pid);
+          const t = App.toast.show(`${pname} wants to share ${msg.lang||'code'} — accept?`, 'info', true);
+          const accBtn = document.createElement('button');
+          accBtn.textContent = 'Accept'; accBtn.className = 'btn btn-p btn-xs';
+          accBtn.style.marginLeft = '8px';
+          accBtn.addEventListener('click', () => {
+            t.remove();
+            const ce = document.getElementById('code-editor-area');
+            if (ce) ce.value = msg.code;
+            if (msg.lang) { const ls = document.getElementById('ce-lang'); if (ls) ls.value = msg.lang; }
+            App.toast.show('Code pasted into editor', 'success');
+            App.ui.setTab('code');
+          }, { once: true });
+          t.appendChild(accBtn);
         }
         break;
       }
@@ -2360,24 +2383,21 @@ class PeerManager {
     return this.peerMap.get(pid)?.name || pid?.substring(0,12) + '…';
   }
 
-  sendMsg(pid, text, id) {
+  async sendMsg(pid, text, id) {
     const conn = this.conn(pid);
     if (!conn?.open) return false;
     try {
-      // E2E if enabled and key available
       if (localStorage.getItem('dh-e2e') === '1' && App.crypto.hasKey(pid)) {
-        App.crypto.encrypt(pid, text).then(ct => {
-          if (ct) {
-            conn.send(JSON.stringify({ type: 'enc-msg', id, data: Array.from(new Uint8Array(ct)), ts: Date.now() }));
-          } else {
-            conn.send(JSON.stringify({ type: 'msg', id, text, ts: Date.now() }));
-          }
-        });
+        const ct = await App.crypto.encrypt(pid, text);
+        if (ct) {
+          conn.send(JSON.stringify({ type: 'enc-msg', id, data: Array.from(new Uint8Array(ct)), ts: Date.now() }));
+        } else {
+          conn.send(JSON.stringify({ type: 'msg', id, text, ts: Date.now() }));
+        }
       } else {
         conn.send(JSON.stringify({ type: 'msg', id, text, ts: Date.now() }));
       }
       App.session.msgsSent++;
-      // Deliver receipt
       Timers.timeout(`del-${id}`, () => App.ui.markDel(id), 300);
       return true;
     } catch(e) {
@@ -2430,118 +2450,102 @@ class FileTransfer {
   }
 
   async _sendOne(file, pid) {
-    const conn = App.peer.conn(pid);
-    if (!conn?.open) { App.toast.show('No open connection', 'warning'); return; }
-
-    const tid = uid(20); // FIX F4: 20-char TID
+    const tid = uid(20);
     const totalChunks = Math.ceil(file.size / CFG.CHUNK_SIZE);
     const state = {
-      tid, pid, file,
-      totalChunks,
-      sentChunks: 0,
-      ackResolvers: new Map(), // seq → { resolve, reject }
-      paused: false,
-      cancelled: false,
-      startTime: Date.now(),
-      bytesSent: 0
+      tid, pid, file, totalChunks,
+      sentChunks: 0, ackedChunks: 0,
+      ackResolvers: new Map(),
+      paused: false, cancelled: false,
+      startTime: Date.now(), bytesSent: 0
     };
     this._sends.set(tid, state);
-
-    // Render UI
     this._renderTx(tid, file.name, file.size, 'send');
 
-    // Send JSON metadata FIRST (FIX F1)
     try {
+      const conn = App.peer.conn(pid);
+      if (!conn?.open) throw new Error('No open connection');
       conn.send(JSON.stringify({
-        type: 'file-meta',
-        tid,
-        name: file.name,
-        size: file.size,
-        mime: file.type || 'application/octet-stream',
-        totalChunks
+        type: 'file-meta', tid, name: file.name,
+        size: file.size, mime: file.type || 'application/octet-stream', totalChunks
       }));
-    } catch(e) {
-      this._failTx(tid, 'Meta send failed: ' + e.message);
-      return;
-    }
+    } catch(e) { this._failTx(tid, 'Meta send failed: ' + e.message); return; }
 
-    // Send chunks
-    for (let seq = 0; seq < totalChunks; seq++) {
-      if (state.cancelled) { this._sends.delete(tid); return; }
+    let nextSeq = 0;
+    const inFlight = new Map();
 
-      // Wait while paused
-      while (state.paused && !state.cancelled) await sleep(200);
-      if (state.cancelled) { this._sends.delete(tid); return; }
+    const sendNext = async () => {
+      while (!state.cancelled && !state.paused &&
+             nextSeq < totalChunks &&
+             inFlight.size < CFG.WINDOW_SIZE) {
+        const seq = nextSeq++;
+        const conn = App.peer.conn(pid);
+        if (!conn?.open) { this._failTx(tid, 'Connection closed'); return; }
+        if (conn.dataChannel && conn.dataChannel.bufferedAmount > CFG.MAX_BACKPRESSURE) {
+          await sleep(30); nextSeq--; break;
+        }
+        let chunk;
+        try { chunk = await this._readChunk(file, seq); }
+        catch(e) { this._failTx(tid, 'Read error: ' + e.message); return; }
 
-      // Backpressure: check bufferedAmount (FIX F6)
-      if (conn.dataChannel) {
-        while (conn.dataChannel.bufferedAmount > CFG.MAX_BACKPRESSURE) {
-          await sleep(50);
-          if (state.cancelled) { this._sends.delete(tid); return; }
+        const tidBytes = new TextEncoder().encode(tid);
+        const headerSize = 2 + tidBytes.length + 4 + 4;
+        const frame = new ArrayBuffer(headerSize + chunk.byteLength);
+        const view = new DataView(frame);
+        let off = 0;
+        view.setUint16(off, tidBytes.length, false); off += 2;
+        new Uint8Array(frame, off, tidBytes.length).set(tidBytes); off += tidBytes.length;
+        view.setUint32(off, seq, false); off += 4;
+        view.setUint32(off, totalChunks, false); off += 4;
+        new Uint8Array(frame, off).set(new Uint8Array(chunk));
+
+        let retries = 0;
+        const attempt = () => new Promise((resolve, reject) => {
+          state.ackResolvers.set(seq, { resolve, reject });
+          Timers.timeout(`ack-${tid}-${seq}`, () => {
+            if (state.ackResolvers.has(seq)) {
+              state.ackResolvers.delete(seq);
+              if (retries < CFG.ACK_RETRY_MAX) {
+                retries++;
+                this._updateTx(tid, Math.round(state.ackedChunks/totalChunks*100),
+                  `retrying seq ${seq} (${retries})…`, state.ackedChunks, totalChunks);
+                try { conn.send(frame); } catch(e) {}
+                attempt().then(resolve).catch(reject);
+              } else {
+                reject(new Error(`ACK timeout seq ${seq} after ${CFG.ACK_RETRY_MAX} retries`));
+              }
+            }
+          }, CFG.ACK_TIMEOUT_MS);
+        });
+
+        inFlight.set(seq, { frame, resolve: null, reject: null });
+        try {
+          conn.send(frame);
+          await attempt();
+          inFlight.delete(seq);
+          state.ackedChunks++;
+          state.bytesSent += chunk.byteLength;
+          App.session.bytesSent += chunk.byteLength;
+          this._totalSent += chunk.byteLength;
+          const pct = Math.round(state.ackedChunks / totalChunks * 100);
+          const elapsed = (Date.now() - state.startTime) / 1000;
+          const speed = elapsed > 0 ? fmtSz(state.bytesSent / elapsed) + '/s' : '—';
+          this._updateTx(tid, pct, speed, state.ackedChunks, totalChunks);
+          sendNext();
+        } catch(e) {
+          if (!state.cancelled) this._failTx(tid, e.message);
+          return;
         }
       }
+    };
 
-      // Read chunk (FIX F5: FileReader pool semaphore)
-      let chunk;
-      try {
-        chunk = await this._readChunk(file, seq);
-      } catch(e) {
-        this._failTx(tid, 'Read error: ' + e.message);
-        return;
-      }
-
-      // PRE-ACK BUFFER: register resolver BEFORE sending (FIX F2)
-      const ackPromise = new Promise((resolve, reject) => {
-        state.ackResolvers.set(seq, { resolve, reject });
-        Timers.timeout(`ack-${tid}-${seq}`, () => {
-          if (state.ackResolvers.has(seq)) {
-            state.ackResolvers.delete(seq);
-            reject(new Error(`ACK timeout seq ${seq}`));
-          }
-        }, 30000);
-      });
-
-      // Build chunk header (4 bytes tid-len, tid, 4 bytes seq, 4 bytes total, then data)
-      // Format: [tid_len(2)] [tid_bytes] [seq(4)] [total(4)] [data]
-      const tidBytes = new TextEncoder().encode(tid);
-      const headerSize = 2 + tidBytes.length + 4 + 4;
-      const frame = new ArrayBuffer(headerSize + chunk.byteLength);
-      const view = new DataView(frame);
-      let off = 0;
-      view.setUint16(off, tidBytes.length, false); off += 2;
-      new Uint8Array(frame, off, tidBytes.length).set(tidBytes); off += tidBytes.length;
-      view.setUint32(off, seq, false); off += 4;
-      view.setUint32(off, totalChunks, false); off += 4;
-      new Uint8Array(frame, off).set(new Uint8Array(chunk));
-
-      // Send binary frame
-      try {
-        conn.send(frame);
-      } catch(e) {
-        this._failTx(tid, 'Chunk send failed: ' + e.message);
-        return;
-      }
-
-      // Wait for ACK
-      try {
-        await ackPromise;
-      } catch(e) {
-        if (!state.cancelled) this._failTx(tid, e.message);
-        return;
-      }
-
-      // Update progress
-      state.sentChunks++;
-      state.bytesSent += chunk.byteLength;
-      this._totalSent += chunk.byteLength;
-      App.session.bytesSent += chunk.byteLength;
-      const pct = Math.round(state.sentChunks / totalChunks * 100);
-      const elapsed = (Date.now() - state.startTime) / 1000;
-      const speed = elapsed > 0 ? fmtSz(state.bytesSent / elapsed) + '/s' : '—';
-      this._updateTx(tid, pct, speed, state.sentChunks, totalChunks);
+    const windowPromises = [];
+    for (let w = 0; w < CFG.WINDOW_SIZE && w < totalChunks; w++) windowPromises.push(sendNext());
+    while (state.ackedChunks < totalChunks && !state.cancelled) {
+      await sleep(50);
+      while (state.paused && !state.cancelled) await sleep(200);
     }
-
-    // Done
+    if (state.cancelled) { this._sends.delete(tid); return; }
     this._sends.delete(tid);
     this._doneTx(tid);
     App.toast.show(`Sent: ${file.name}`, 'success');
@@ -2549,7 +2553,6 @@ class FileTransfer {
     this._updInfo();
   }
 
-  // FileReader pool semaphore (FIX F5)
   async _readChunk(file, seq) {
     while (this._frPool >= CFG.FILEREADER_POOL) await sleep(20);
     this._frPool++;
@@ -2560,7 +2563,7 @@ class FileTransfer {
       return await new Promise((resolve, reject) => {
         const reader = new FileReader();
         reader.onload = e => resolve(e.target.result);
-        reader.onerror = e => reject(reader.error);
+        reader.onerror = () => reject(reader.error || new Error('FileReader error'));
         reader.readAsArrayBuffer(slice);
       });
     } finally {
@@ -2627,20 +2630,18 @@ class FileTransfer {
     }
   }
 
-  // File assembly (FIX F3: use new Blob(parts) to avoid OOM)
   async _assembleFile(state) {
     try {
-      // Build ordered array of parts
-      const orderedParts = [];
+      const orderedParts = new Array(state.totalChunks);
       for (let i = 0; i < state.totalChunks; i++) {
         if (!state.parts[i]) throw new Error(`Missing chunk ${i}`);
-        orderedParts.push(state.parts[i]);
+        orderedParts[i] = state.parts[i];
       }
       const blob = new Blob(orderedParts, { type: state.mime || 'application/octet-stream' });
       const url = URL.createObjectURL(blob);
       this._doneRx(state.tid, state.name, url, state.size);
       this._recvs.delete(state.tid);
-      App.toast.show(`Received: ${state.name}`, 'success');
+      App.toast.show(`Received: ${state.name} (${fmtSz(state.size)})`, 'success');
       App.auto?.fire('file-recv', { name: state.name, size: state.size });
       App.store.put('transfers', {
         id: state.tid, name: state.name, size: state.size,
@@ -2935,26 +2936,32 @@ class MediaManager {
     if (this._ending) return;
     if (!this.inCall && !this._localStream) return;
     this._ending = true;
-    this._cleanupMedia();
-    const pid = this.callPeerId;
-    this.inCall = false; this.callPeerId = null;
-    App.peer.activeCall = null;
-    if (pid) {
-      const conn = App.peer.conn(pid);
-      if (conn?.open) try { conn.send(JSON.stringify({ type: 'signal', call_ended: true, reason: 'hangup' })); } catch(e) {}
+    try {
+      this._cleanupMedia();
+      const pid = this.callPeerId;
+      this.inCall = false; this.callPeerId = null;
+      App.peer.activeCall = null;
+      if (pid) {
+        const conn = App.peer.conn(pid);
+        if (conn?.open) try { conn.send(JSON.stringify({ type: 'signal', call_ended: true, reason: 'hangup' })); } catch(e) {}
+      }
+      if (this._call) { try { this._call.close(); } catch(e) {} this._call = null; }
+      document.getElementById('callbar')?.classList.remove('on');
+      document.getElementById('vwrap').style.display = 'none';
+      const avis = document.getElementById('avis');
+      if (avis) { avis.style.display = 'none'; avis.innerHTML = ''; }
+      this._stopTimer();
+      this._releaseWakeLock();
+      this._stopRecording();
+      setEl('call-timer2', '0:00');
+      setEl('call-state-label2', 'No active call');
+      setEl('cpeer-lbl2', '—');
+      setEl('recbadge2', null, el => el.style.display = 'none');
+      setEl('recbadge', null, el => el.classList.remove('on'));
+      App.log.info('Call ended');
+    } finally {
+      this._ending = false;
     }
-    if (this._call) { try { this._call.close(); } catch(e) {} this._call = null; }
-    document.getElementById('callbar').classList.remove('on');
-    document.getElementById('vwrap').style.display = 'none';
-    const avis = document.getElementById('avis');
-    if (avis) { avis.style.display = 'none'; avis.innerHTML = ''; }
-    this._stopTimer();
-    this._releaseWakeLock();
-    this._stopRecording();
-    setEl('call-state-label2', 'No active call');
-    setEl('recbadge', null, el => el.classList.remove('on'));
-    App.log.info('Call ended');
-    this._ending = false;
   }
 
   remoteEnded(reason) {
@@ -2991,7 +2998,9 @@ class MediaManager {
   _startTimer() {
     this._timerStart = Date.now();
     Timers.interval('call-timer', () => {
-      setEl('call-timer', fmtDur(Date.now() - this._timerStart));
+      const t = fmtDur(Date.now() - this._timerStart);
+      setEl('call-timer', t);
+      setEl('call-timer2', t);
       this._updateCallQuality();
     }, 1000);
   }
@@ -3011,7 +3020,8 @@ class MediaManager {
         if (r.type === 'inbound-rtp') packets = r.packetsReceived || 0;
       });
       const cls = rtt < 100 ? 'q-e' : rtt < 250 ? 'q-g' : rtt < 500 ? 'q-p' : 'q-c';
-      ['call-quality-dot','call-quality-dot2'].forEach(id => { const el = document.getElementById(id); if (el) el.className = cls; });
+      ['call-quality-dot'].forEach(id => { const el = document.getElementById(id); if (el) el.className = cls; });
+      const dot2 = document.getElementById('call-quality-dot2'); if (dot2) dot2.className = cls;
       setEl('cq-lbl', `RTT:${rtt}ms Jitter:${jitter}ms`);
       setEl('cq-lbl2', `RTT:${rtt}ms`);
     }).catch(()=>{});
@@ -3066,6 +3076,7 @@ class MediaManager {
     };
     this._recorder.start();
     setEl('recbadge', null, el => el.classList.add('on'));
+    setEl('recbadge2', null, el => el.style.display = 'inline-flex');
     App.toast.show('Recording started', 'info');
   }
 
@@ -3073,6 +3084,7 @@ class MediaManager {
     if (this._recorder?.state === 'recording') {
       try { this._recorder.stop(); } catch(e) {}
       setEl('recbadge', null, el => el.classList.remove('on'));
+      setEl('recbadge2', null, el => el.style.display = 'none');
     }
     this._recorder = null;
   }
@@ -3121,10 +3133,14 @@ class Whiteboard {
     if (!parent) return;
     const w = parent.clientWidth - 2;
     if (w > 0 && c.width !== w) {
-      const img = this._ctx.getImageData(0, 0, c.width, c.height);
+      const offscreen = document.createElement('canvas');
+      offscreen.width = c.width;
+      offscreen.height = c.height;
+      offscreen.getContext('2d').drawImage(c, 0, 0);
+      const newH = Math.min(500, Math.round(w * 0.6));
       c.width = w;
-      c.height = Math.min(500, Math.round(w * 0.6));
-      this._ctx.putImageData(img, 0, 0);
+      c.height = newH;
+      this._ctx.drawImage(offscreen, 0, 0);
     }
   }
 
@@ -3364,20 +3380,60 @@ class CodeEditor {
     const lang = document.getElementById('ce-lang')?.value;
     const out = document.getElementById('ce-output');
     if (!out) return;
-    if (lang !== 'javascript') { out.textContent = `Cannot run ${lang} in browser`; return; }
-    const logs = [];
-    const origLog = console.log;
-    console.log = (...args) => { logs.push(args.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' ')); origLog(...args); };
-    try {
-      const result = new Function(code)();
-      console.log = origLog;
-      out.textContent = logs.join('\n') + (result !== undefined ? '\n→ ' + JSON.stringify(result) : '');
-      setEl('ce-status', '✅ Ran OK');
-    } catch(e) {
-      console.log = origLog;
-      out.textContent = '❌ ' + e.message;
-      setEl('ce-status', '❌ Error');
+    if (lang !== 'javascript' && lang !== 'html') {
+      out.textContent = `Cannot run ${lang} in browser`; return;
     }
+    if (lang === 'html') {
+      const fr = document.createElement('iframe');
+      fr.setAttribute('sandbox', 'allow-scripts');
+      fr.style.cssText = 'width:100%;height:240px;border:1px solid var(--border);border-radius:var(--radius);background:#fff;margin-top:8px';
+      fr.srcdoc = code;
+      out.innerHTML = '';
+      out.appendChild(fr);
+      setEl('ce-status', '✅ Rendered');
+      return;
+    }
+    const logs = [];
+    const fr = document.createElement('iframe');
+    fr.setAttribute('sandbox', 'allow-scripts');
+    fr.style.display = 'none';
+    document.body.appendChild(fr);
+    const listener = e => {
+      if (e.source !== fr.contentWindow) return;
+      if (e.data?.type === 'log') logs.push(e.data.msg);
+      if (e.data?.type === 'done') {
+        window.removeEventListener('message', listener);
+        fr.remove();
+        out.textContent = logs.join('\n') + (e.data.result !== undefined ? '\n→ ' + JSON.stringify(e.data.result) : '');
+        setEl('ce-status', '✅ Ran OK');
+      }
+      if (e.data?.type === 'error') {
+        window.removeEventListener('message', listener);
+        fr.remove();
+        out.textContent = '❌ ' + e.data.msg;
+        setEl('ce-status', '❌ Error');
+      }
+    };
+    window.addEventListener('message', listener);
+    fr.srcdoc = `<script>
+      const _log = console.log.bind(console);
+      console.log = (...a) => { parent.postMessage({type:'log',msg:a.map(x=>typeof x==='object'?JSON.stringify(x):String(x)).join(' ')},'*'); _log(...a); };
+      try {
+        const _r = (function(){ ${code.replace(/`/g,'\\`')} })();
+        parent.postMessage({type:'done',result:_r},'*');
+      } catch(e) {
+        parent.postMessage({type:'error',msg:e.message},'*');
+      }
+    <\/script>`;
+    document.body.appendChild(fr);
+    Timers.timeout('ce-sandbox', () => {
+      if (document.body.contains(fr)) {
+        window.removeEventListener('message', listener);
+        fr.remove();
+        out.textContent = '⏱ Execution timed out (5s)';
+        setEl('ce-status', '⏱ Timeout');
+      }
+    }, 5000);
   }
 
   _saveLocal() {
@@ -3974,7 +4030,7 @@ class QREngine {
       setEl('qr-status', 'Point at a DevHub invite QR code…');
       const scan = () => {
         if (!this._scanStream) return;
-        if (video?.readyState === video?.HAVE_ENOUGH_DATA) {
+        if (video?.readyState === video?.HAVE_ENOUGH_DATA && video.videoHeight > 0 && video.videoWidth > 0) {
           canvas.height = video.videoHeight; canvas.width = video.videoWidth;
           ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
           const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
@@ -4278,8 +4334,9 @@ class UIManager {
     const send = () => {
       const text = mi?.value.trim(); if (!text || !this.activePeer) return;
       const id = uid(12);
-      const sent = App.peer.sendMsg(this.activePeer, text, id);
-      if (!sent) App.msgQ.add(this.activePeer, text, id);
+      App.peer.sendMsg(this.activePeer, text, id).then(sent => {
+        if (!sent) App.msgQ.add(this.activePeer, text, id);
+      });
       this.appendMsg({ id, text, self: true, ts: Date.now(), peer: this.activePeer });
       App.store.put('messages', { id, pid: this.activePeer, text, ts: Date.now(), self: true }).catch(() => {});
       if (mi) mi.value = '';
@@ -4305,6 +4362,8 @@ class UIManager {
         btn.onclick = () => { if (mi) { mi.value += e; mi.focus(); } picker.remove(); };
         picker.appendChild(btn);
       });
+      document.getElementById('dh-emoji-picker')?.remove();
+      picker.id = 'dh-emoji-picker';
       document.body.appendChild(picker);
       Timers.timeout('emoji-close', () => picker.remove(), 5000);
       const close = e => { if (!picker.contains(e.target)) { picker.remove(); document.removeEventListener('click', close); } };
@@ -4351,11 +4410,12 @@ class UIManager {
     const row = document.createElement('div');
     row.className = 'mr' + (self ? ' me' : '');
     const ts_fmt = fmtTs(ts || Date.now());
-    const isImage = /^(https?:\/\/.*\.(jpg|jpeg|png|gif|webp))/i.test(text);
-    const isURL = /^https?:\/\//.test(text);
+    const safeURL = (u) => /^https?:\/\//i.test(u.trim()) && !/^(javascript|data|vbscript):/i.test(u.trim());
+    const isImage = safeURL(text) && /\.(jpg|jpeg|png|gif|webp)(\?.*)?$/i.test(text);
+    const isURL = safeURL(text);
     let content = '';
     if (isImage) content = `<img src="${esc(text)}" style="max-width:200px;border-radius:8px;cursor:pointer" onclick="document.getElementById('img-view-src').src='${esc(text)}';document.getElementById('img-viewer').classList.add('on')">`;
-    else if (isURL) content = `<a href="${esc(text)}" target="_blank" rel="noopener">${esc(text)}</a>`;
+    else if (isURL) content = `<a href="${esc(text)}" target="_blank" rel="noopener noreferrer">${esc(text)}</a>`;
     else content = esc(text).replace(/\n/g, '<br>');
     row.innerHTML = `<div class="mb ${self?'me':'them'}" id="mb-${id}">
       ${content}
@@ -4471,6 +4531,9 @@ class UIManager {
     document.getElementById('btn-hangup')?.addEventListener('click', () => App.media.end());
     document.getElementById('btn-mute')?.addEventListener('click', () => App.media.toggleMute());
     document.getElementById('btn-vid-off')?.addEventListener('click', () => App.media.toggleVideo());
+    document.getElementById('btn-hangup2')?.addEventListener('click', () => App.media.end());
+    document.getElementById('btn-mute2')?.addEventListener('click', () => App.media.toggleMute());
+    document.getElementById('btn-vid-off2')?.addEventListener('click', () => App.media.toggleVideo());
     document.getElementById('btn-screenshare')?.addEventListener('click', () => {
       if (this.activePeer) App.media.screenShare(this.activePeer);
       else App.toast.show('Select a peer first', 'warning');
@@ -4525,12 +4588,21 @@ class UIManager {
     document.getElementById('mob-btn-voice')?.addEventListener('click', () => { document.getElementById('mobile-more')?.classList.remove('on'); App.voice.start(); });
     document.getElementById('mob-copy-invite')?.addEventListener('click', () => this.copyInvite());
     // Mobile keyboard overlap fix
-    const origH = window.innerHeight;
-    Listeners.add('mob-resize', window, 'resize', throttle(() => {
-      const kbOpen = window.innerHeight < origH * 0.7;
-      const ci = document.getElementById('ci');
-      if (ci) ci.style.paddingBottom = kbOpen ? '5px' : '';
-    }, 200));
+    if (window.visualViewport) {
+      Listeners.add('mob-vv-resize', window.visualViewport, 'resize', throttle(() => {
+        const ci = document.getElementById('ci');
+        if (!ci) return;
+        const offset = window.innerHeight - window.visualViewport.height - window.visualViewport.offsetTop;
+        ci.style.transform = offset > 50 ? `translateY(-${Math.round(offset)}px)` : '';
+      }, 50));
+    } else {
+      const origH = window.innerHeight;
+      Listeners.add('mob-resize', window, 'resize', throttle(() => {
+        const kbOpen = window.innerHeight < origH * 0.7;
+        const ci = document.getElementById('ci');
+        if (ci) ci.style.paddingBottom = kbOpen ? '5px' : '';
+      }, 200));
+    }
   }
 
   _bindSearch() {
@@ -4717,13 +4789,22 @@ class UIManager {
     });
     // Vault
     document.getElementById('btn-vault-unlock')?.addEventListener('click', () => {
-      const pw = document.getElementById('vault-pw')?.value;
-      if (pw) App.vault.unlock(pw);
+      const el = document.getElementById('vault-pw');
+      const pw = el?.value;
+      if (pw) {
+        App.vault.unlock(pw).finally(() => { if (el) el.value = ''; });
+      }
     });
     document.getElementById('vault-pw')?.addEventListener('keydown', e => { if (e.key === 'Enter') document.getElementById('btn-vault-unlock')?.click(); });
     document.getElementById('btn-vault-create')?.addEventListener('click', () => {
-      const pw = prompt('Create master password:');
-      if (pw) { localStorage.setItem('dh-vault-salt', ''); App.vault.unlock(pw); }
+      const pw = prompt('Create master password (min 8 chars):');
+      if (pw && pw.length >= 8) {
+        localStorage.removeItem('dh-vault-salt');
+        localStorage.removeItem('dh-vault-data');
+        App.vault.unlock(pw);
+      } else if (pw) {
+        App.toast.show('Password must be at least 8 characters', 'warning');
+      }
     });
     document.getElementById('btn-vault-add')?.addEventListener('click', () => {
       const k = document.getElementById('vault-key')?.value.trim();
