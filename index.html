@@ -1275,6 +1275,7 @@ select{appearance:none;-webkit-appearance:none;background-image:url("data:image/
   </div>
   <div class="notice">AppDoctor performs deep health checks, detects issues, and applies automatic fixes. Safe Mode isolates the app to core modules only.</div>
   <div id="doctor-status" style="padding:10px;background:var(--bg3);border-radius:var(--radius-sm);margin-bottom:12px;font-size:12px">Run diagnosis to see status</div>
+  <div id="capability-summary" style="padding:8px;background:var(--bg2);border-radius:var(--radius-sm);margin-bottom:10px;font-size:11px;color:var(--muted)"></div>
   <div class="section-hdr">Checks</div>
   <div id="doctor-checks"></div>
   <div class="sep"></div>
@@ -1482,7 +1483,7 @@ select{appearance:none;-webkit-appearance:none;background-image:url("data:image/
    CONFIG MANAGER — central config, no magic numbers
 ═══════════════════════════════════════════════════════ */
 const CFG = {
-  VERSION: '3.2.0',
+  VERSION: '3.3.0',
   DB_NAME: 'devhub-v4',
   DB_VERSION: 4,
   CHUNK_SIZE: 256 * 1024,
@@ -3077,6 +3078,7 @@ class PeerManager {
     }
 
     conn.on('open',async()=>{
+      try{App.connReg?.register(pid,conn);}catch(e){}
       this._settingUp.delete(pid);
       this.dconns.set(pid,conn);
       App.log.success(`Connected: ${pid.substring(0,12)}`);
@@ -3145,6 +3147,7 @@ class PeerManager {
         App.ui.renderPeer(pid,fp,'ONLINE');
         App.ui.renderMobPeer(pid,fp,'ONLINE');
         App.auto?.fire('peer-connect',{pid,fp});
+        try{App.bus?.emit('peer:connect',{pid});}catch(e){}
         App.notifCenter.add(`${fp.name||pid.substring(0,8)} connected`,'Peer joined your hub','👤','success');
         App.toast.show(`${fp.name||pid.substring(0,8)} connected`,'success');
         App.sounds.peerConnected();
@@ -3264,10 +3267,13 @@ class PeerManager {
 
   _onClose(pid,reason){
     this.dconns.delete(pid);
+    try{App.connReg?.unregister(pid);}catch(e){}
+    try{App.rtcReg?.unregister('call-'+pid);}catch(e){}
     const info=this.peerMap.get(pid);
     if(info){info.status='OFFLINE';App.ui.renderPeer(pid,info.fp,'OFFLINE');App.ui.renderMobPeer(pid,info.fp,'OFFLINE');}
     App.log.info(`Disconnected: ${pid.substring(0,12)} (${reason})`);
     App.auto?.fire('peer-disconnect',{pid});
+    try{App.bus?.emit('peer:disconnect',{pid});}catch(e){}
     if(reason!=='closed'&&reason!=='blocked'){
       setEl('heal-banner',null,el=>el.classList.add('on'));
       setEl('fab-repair',null,el=>el.classList.add('on'));
@@ -3439,6 +3445,7 @@ class FileTransfer {
     App.toast.show(`Sent: ${file.name}`,'success');
     App.notifCenter.add('File Sent',file.name,'📁','success');
     App.auto?.fire('file-sent',{name:file.name,size:file.size});
+    try{App.bus?.emit('file:sent',{name:file.name,size:file.size});}catch(e){}
     App.session.filesTransferred++;
     this._updInfo();
   }
@@ -3724,6 +3731,8 @@ class MediaManager {
         if(!navigator.mediaDevices?.getDisplayMedia){App.toast.show('Screen share not supported','warning');return;}
         stream=await navigator.mediaDevices.getDisplayMedia({video:true,audio:true});
       }
+      // Register stream in StreamRegistry for lifecycle cleanup
+      try{App.streamReg?.register('call-stream',stream);}catch(e){}
       if(type==='screen'){
         this._screenStream=stream;
         this._localStream=stream;
@@ -3796,6 +3805,8 @@ class MediaManager {
   }
 
   _setupCall(call,pid,type){
+    // Register in RTCRegistry for stale cleanup tracking
+    if(call?.peerConnection)try{App.rtcReg?.register('call-'+pid,call.peerConnection);}catch(e){}
     const name=App.peer.peerName(pid);
     setEl('cpeer-lbl',name);setEl('cpeer-lbl2',name);
     setEl('call-state-label','Connected');setEl('call-state-label2','Connected');
@@ -4782,6 +4793,7 @@ class DeviceControlMgr {
         }
         case 'camera':{
           const s=await navigator.mediaDevices.getUserMedia({video:true});
+        try{App.streamReg?.register('cam-stream',s);}catch(e){}
           const t=s.getVideoTracks()[0];
           this.update(id,t.label.substring(0,30)||'Camera',true);
           s.getTracks().forEach(tr=>tr.stop());
@@ -5007,6 +5019,7 @@ class QREngine {
     ov.classList.add('on');
     try {
       this._scanStream=await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'}});
+      try{App.streamReg?.register('qr-stream',this._scanStream);}catch(e){}
       const video=document.getElementById('qr-video');
       if(video)video.srcObject=this._scanStream;
       const canvas=document.getElementById('qr-canvas');
@@ -6078,6 +6091,350 @@ class LifecycleManager{
 }
 
 /* ═══════════════════════════════════════════════════════
+   EVENT BUS — centralized pub/sub, prevents cross-module side effects
+═══════════════════════════════════════════════════════ */
+class EventBus{
+  constructor(){this._ls=new Map();}
+  on(ev,fn,{once=false}={}){if(!this._ls.has(ev))this._ls.set(ev,[]);this._ls.get(ev).push({fn,once});return()=>this.off(ev,fn);}
+  off(ev,fn){const ls=this._ls.get(ev);if(ls)this._ls.set(ev,ls.filter(l=>l.fn!==fn));}
+  emit(ev,data){const ls=this._ls.get(ev);if(!ls)return;const run=[...ls];this._ls.set(ev,ls.filter(l=>!l.once));run.forEach(l=>{try{l.fn(data);}catch(e){}});}
+  clear(ev){if(ev)this._ls.delete(ev);else this._ls.clear();}
+  count(ev){return this._ls.get(ev)?.length||0;}
+}
+
+/* ═══════════════════════════════════════════════════════
+   MODULE REGISTRY — track all modules with status
+═══════════════════════════════════════════════════════ */
+class ModuleRegistry{
+  constructor(){this._m=new Map();}
+  register(name,inst,{deps=[],critical=false}={}){this._m.set(name,{inst,deps,critical,status:'registered',error:null});}
+  setStatus(name,status,error=null){const m=this._m.get(name);if(m){m.status=status;m.error=error;}}
+  getStatus(name){return this._m.get(name)?.status||'unknown';}
+  getAll(){return[...this._m.entries()].map(([n,m])=>({name:n,...m}));}
+  getFailed(){return this.getAll().filter(m=>m.status==='failed');}
+}
+
+/* ═══════════════════════════════════════════════════════
+   CAPABILITY MANAGER — upfront browser API detection
+═══════════════════════════════════════════════════════ */
+class CapabilityManager{
+  constructor(){this._c={};this._detect();}
+  _detect(){
+    this._c={
+      webrtc:!!window.RTCPeerConnection,
+      peerjs:typeof Peer!=='undefined',
+      indexedDB:typeof indexedDB!=='undefined',
+      crypto:!!window.crypto?.subtle,
+      serviceWorker:'serviceWorker' in navigator,
+      webBLE:!!navigator.bluetooth,
+      webUSB:!!navigator.usb,
+      webSerial:!!navigator.serial,
+      webHID:!!navigator.hid,
+      webMIDI:!!navigator.requestMIDIAccess,
+      webNFC:typeof NDEFReader!=='undefined',
+      mediaDevices:!!(navigator.mediaDevices?.getUserMedia),
+      geolocation:!!navigator.geolocation,
+      wakeLock:'wakeLock' in navigator,
+      deviceMotion:'DeviceMotionEvent' in window,
+      deviceOrientation:'DeviceOrientationEvent' in window,
+      clipboard:!!navigator.clipboard,
+      notification:'Notification' in window,
+      gamepad:!!navigator.getGamepads,
+      canvas:!!document.createElement('canvas').getContext,
+      broadcastChannel:typeof BroadcastChannel!=='undefined',
+      connection:!!(navigator.connection||navigator.mozConnection||navigator.webkitConnection),
+      performance:!!(performance?.memory),
+    };
+  }
+  supports(cap){return!!this._c[cap];}
+  getAll(){return{...this._c};}
+  getUnsupported(){return Object.entries(this._c).filter(([,v])=>!v).map(([k])=>k);}
+  getSupportLevel(cap){
+    if(!this._c[cap])return'unsupported';
+    const limited=['webBLE','webNFC','webHID','webSerial','webUSB','webMIDI'];
+    return limited.includes(cap)?'limited':'supported';
+  }
+}
+
+/* ═══════════════════════════════════════════════════════
+   PERMISSION RECOVERY MANAGER — handle permission revocation
+═══════════════════════════════════════════════════════ */
+class PermissionRecoveryManager{
+  constructor(){this._states=new Map();this._handlers=new Map();}
+  async check(name,descriptor){
+    if(!navigator.permissions?.query){this._states.set(name,'unknown');return'unknown';}
+    try{
+      const r=await navigator.permissions.query(descriptor);
+      this._states.set(name,r.state);
+      r.addEventListener('change',()=>{
+        this._states.set(name,r.state);
+        const h=this._handlers.get(name);
+        if(h)try{h(r.state);}catch(e){}
+        if(r.state==='denied'){
+          try{App.toast?.show('Permission revoked: '+name+' — some features may be unavailable','warning');}catch(e){}
+          try{App.log?.warn('Permission denied: '+name);}catch(e){}
+        }
+      });
+      return r.state;
+    }catch(e){this._states.set(name,'unknown');return'unknown';}
+  }
+  onRevoke(name,fn){this._handlers.set(name,fn);}
+  getState(name){return this._states.get(name)||'unknown';}
+  async checkAll(){
+    const checks=[['camera',{name:'camera'}],['microphone',{name:'microphone'}],['geolocation',{name:'geolocation'}],['notifications',{name:'notifications'}]];
+    for(const[n,d]of checks)await this.check(n,d).catch(()=>{});
+  }
+}
+
+/* ═══════════════════════════════════════════════════════
+   RTC REGISTRY — track + cleanup stale RTC connections
+═══════════════════════════════════════════════════════ */
+class RTCRegistry{
+  constructor(){this._r=new Map();}
+  register(id,conn){this._r.set(id,{conn,ts:Date.now()});}
+  unregister(id){this._r.delete(id);}
+  get(id){return this._r.get(id)?.conn;}
+  cleanStale(maxMs=300000){
+    const now=Date.now();let n=0;
+    for(const[id,e]of this._r){
+      const c=e.conn;
+      const stale=(now-e.ts>maxMs)||(c.connectionState==='failed')||(c.connectionState==='closed')||(c.signalingState==='closed');
+      if(stale){try{c.close();}catch(ex){}this._r.delete(id);n++;}
+    }
+    if(n)try{App.log?.info('RTCRegistry: cleaned '+n+' stale connections');}catch(e){}
+    return n;
+  }
+  closeAll(){this._r.forEach(({conn})=>{try{conn.close();}catch(e){}});this._r.clear();}
+  size(){return this._r.size;}
+}
+
+/* ═══════════════════════════════════════════════════════
+   STREAM REGISTRY — prevent media stream leaks
+═══════════════════════════════════════════════════════ */
+class StreamRegistry{
+  constructor(){this._s=new Map();}
+  register(id,stream){this.stop(id);this._s.set(id,stream);}
+  stop(id){const s=this._s.get(id);if(s){try{s.getTracks().forEach(t=>t.stop());}catch(e){}this._s.delete(id);}}
+  stopAll(){[...this._s.keys()].forEach(id=>this.stop(id));}
+  get(id){return this._s.get(id);}
+  size(){return this._s.size;}
+}
+
+/* ═══════════════════════════════════════════════════════
+   CONNECTION REGISTRY — dedup peer data connections
+═══════════════════════════════════════════════════════ */
+class ConnectionRegistry{
+  constructor(){this._r=new Map();}
+  register(pid,conn){const ex=this._r.get(pid);if(ex&&ex!==conn){try{ex.close();}catch(e){}}this._r.set(pid,conn);}
+  unregister(pid){this._r.delete(pid);}
+  get(pid){return this._r.get(pid);}
+  isOpen(pid){const c=this._r.get(pid);return!!(c&&c.open);}
+  closeAll(){this._r.forEach(c=>{try{c.close();}catch(e){}});this._r.clear();}
+  size(){return this._r.size;}
+}
+
+/* ═══════════════════════════════════════════════════════
+   SINGLE SOURCE STATE STORE — truth state with reconciliation
+═══════════════════════════════════════════════════════ */
+class SingleSourceStateStore{
+  constructor(){
+    this._state={
+      peer:{id:null,connected:false,status:'offline'},
+      rtc:{active:false,callPeer:null,callType:null},
+      transfer:{active:false,count:0},
+      device:{ble:false,usb:false,hid:false,serial:false,midi:false,nfc:false},
+      session:{startTs:Date.now(),healthy:true,uptime:0},
+    };
+    this._watchers=new Map();
+  }
+  get(key){
+    const parts=key.split('.');let v=this._state;
+    for(const p of parts)v=v?.[p];
+    return v;
+  }
+  set(key,value){
+    const parts=key.split('.');let obj=this._state;
+    for(let i=0;i<parts.length-1;i++){if(!obj[parts[i]])obj[parts[i]]={};obj=obj[parts[i]];}
+    const prev=obj[parts[parts.length-1]];
+    obj[parts[parts.length-1]]=value;
+    if(prev!==value){const ws=this._watchers.get(key);if(ws)ws.forEach(fn=>{try{fn(value,prev);}catch(e){}});}
+  }
+  watch(key,fn){if(!this._watchers.has(key))this._watchers.set(key,[]);this._watchers.get(key).push(fn);}
+  reconcile(){
+    // Validate peer state vs real state
+    try{
+      const peer=App.peer;
+      if(peer){
+        const real=!!(peer.peer&&!peer.peer.disconnected&&!peer.peer.destroyed);
+        if(this.get('peer.connected')!==real)this.set('peer.connected',real);
+        if(peer.myId&&this.get('peer.id')!==peer.myId)this.set('peer.id',peer.myId);
+      }
+    }catch(e){}
+    // Validate RTC state
+    try{
+      const callActive=!!(App.peer?.activeCall&&!App.peer.activeCall.closed);
+      if(this.get('rtc.active')!==callActive)this.set('rtc.active',callActive);
+    }catch(e){}
+  }
+}
+
+/* ═══════════════════════════════════════════════════════
+   MEMORY MONITOR — track JS heap usage
+═══════════════════════════════════════════════════════ */
+class MemoryMonitor{
+  constructor(){this._samples=[];}
+  sample(){
+    if(!performance?.memory)return null;
+    const s={ts:Date.now(),used:performance.memory.usedJSHeapSize,total:performance.memory.totalJSHeapSize,limit:performance.memory.jsHeapSizeLimit};
+    this._samples.push(s);
+    if(this._samples.length>20)this._samples.shift();
+    return s;
+  }
+  getUsedMB(){const s=this._samples[this._samples.length-1];return s?Math.round(s.used/1048576):null;}
+  isCritical(){const s=this._samples[this._samples.length-1];return s?s.used>s.limit*0.85||s.used>400*1048576:false;}
+  isHigh(){const s=this._samples[this._samples.length-1];return s?s.used>250*1048576:false;}
+  trend(){
+    if(this._samples.length<4)return'stable';
+    const growth=(this._samples[this._samples.length-1].used-this._samples[0].used)/this._samples[0].used;
+    return growth>0.5?'growing':growth<-0.1?'shrinking':'stable';
+  }
+  getReport(){const mb=this.getUsedMB();return mb!==null?mb+'MB ('+this.trend()+')':'unavailable';}
+}
+
+/* ═══════════════════════════════════════════════════════
+   LONG SESSION CLEANUP SCHEDULER — 8+ hour stability
+═══════════════════════════════════════════════════════ */
+class LongSessionCleanupScheduler{
+  constructor(){this._startTs=Date.now();this._inited=false;}
+  init(){
+    if(this._inited)return;this._inited=true;
+    Timers.interval('session-cleanup',()=>this._runCleanup(),600000);
+    Timers.interval('memory-monitor',()=>this._checkMemory(),120000);
+  }
+  _runCleanup(){
+    try{
+      // Log truncation
+      if(App.log?._entries?.length>500)App.log._entries=App.log._entries.slice(-200);
+      // Audit truncation
+      if(App.audit?._log?.length>500)App.audit._log=App.audit._log.slice(-200);
+      // Error log truncation
+      if(App.globalErr?._errors?.length>200)App.globalErr._errors=App.globalErr._errors.slice(-100);
+      // History truncation
+      if(App.hist?._peers?.length>100)App.hist._peers=App.hist._peers.slice(-50);
+      // Stale RTC cleanup
+      App.rtcReg?.cleanStale();
+      // Blob URL cleanup
+      if(BlobURLs.size()>20)BlobURLs.revokeAll();
+      // Old toast nodes
+      document.querySelectorAll('.toast-item').forEach((el,i)=>{if(i>8)el.remove();});
+      // Pending chunks (FileTransfer)
+      if(App.files?._pendingChunks?.size>20)App.files._pendingChunks.clear();
+      // Timer storm check
+      if(Timers._i.size>60)App.healer?.repairTimers();
+      // State reconcile
+      App.stateStore?.reconcile();
+      try{App.log?.info('LongSession cleanup done — uptime: '+this.getUptime());}catch(e){}
+    }catch(e){try{App.log?.warn('LongSession cleanup error: '+e.message);}catch(ex){}}
+  }
+  _checkMemory(){
+    App.memMon?.sample();
+    if(App.memMon?.isCritical()){
+      try{App.toast?.show('⚠️ Memory critical — running emergency cleanup','error');}catch(e){}
+      this._runCleanup();
+      try{App.log?.clear();}catch(e){}
+    }else if(App.memMon?.isHigh()){
+      try{App.toast?.show('Memory high — auto-cleaning','warning');}catch(e){}
+      this._runCleanup();
+    }
+  }
+  getUptime(){
+    const ms=Date.now()-this._startTs;
+    const h=Math.floor(ms/3600000),m=Math.floor((ms%3600000)/60000);
+    return h+'h '+m+'m';
+  }
+}
+
+/* ═══════════════════════════════════════════════════════
+   NETWORK RECOVERY MANAGER — wifi↔mobile, sleep, bg tab
+═══════════════════════════════════════════════════════ */
+class NetworkRecoveryManager{
+  constructor(){this._inited=false;}
+  init(){
+    if(this._inited)return;this._inited=true;
+    window.addEventListener('online',()=>this._onOnline());
+    window.addEventListener('offline',()=>this._onOffline());
+    document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')this._onVisible();});
+    const conn=navigator.connection||navigator.mozConnection||navigator.webkitConnection;
+    if(conn)conn.addEventListener('change',()=>this._onConnChange());
+  }
+  _onOnline(){
+    try{App.log?.info('Network: back online');}catch(e){}
+    try{App.toast?.show('Network restored — reconnecting…','info');}catch(e){}
+    try{App.ui?.setStatus('CONNECTING');}catch(e){}
+    Timers.timeout('net-recovery-reconnect',()=>{
+      try{if(App.peer?.peer?.disconnected)App.peer.tryReconnect();}catch(e){}
+    },1200);
+  }
+  _onOffline(){
+    try{App.log?.warn('Network: offline');}catch(e){}
+    try{App.toast?.show('Network offline — waiting…','warning');}catch(e){}
+    try{App.ui?.setStatus('OFFLINE');}catch(e){}
+  }
+  _onVisible(){
+    Timers.timeout('tab-restore-check',()=>{
+      try{
+        if(navigator.onLine&&App.peer?.peer?.disconnected){
+          App.log?.info('Tab restored — reconnecting peer…');
+          App.peer.tryReconnect();
+        }
+        App.stateStore?.reconcile();
+      }catch(e){}
+    },1500);
+  }
+  _onConnChange(){
+    const conn=navigator.connection||navigator.mozConnection||navigator.webkitConnection;
+    const type=conn?.effectiveType||'unknown';
+    try{App.log?.info('Network type: '+type);}catch(e){}
+    if(type==='slow-2g'||type==='2g')try{App.toast?.show('Slow network — features may be limited','warning');}catch(e){}
+    Timers.timeout('conn-change-recovery',()=>{
+      try{if(App.peer?.peer?.disconnected)App.peer.tryReconnect();}catch(e){}
+    },2000);
+  }
+}
+
+/* ═══════════════════════════════════════════════════════
+   STORAGE MIGRATION MANAGER — cache/schema versioning
+═══════════════════════════════════════════════════════ */
+class StorageMigrationManager{
+  constructor(){this._vKey='dh-storage-version';}
+  run(){
+    try{
+      const stored=parseInt(SafeStorage.get(this._vKey,'0'))||0;
+      const current=CFG.DB_VERSION||4;
+      if(stored<current){this._migrate(stored,current);SafeStorage.set(this._vKey,String(current));}
+    }catch(e){try{App.log?.warn('StorageMigration: '+e.message);}catch(ex){}}
+  }
+  _migrate(from,to){
+    try{App.log?.info('StorageMigration: v'+from+' → v'+to);}catch(e){}
+    if(from<1)['dh-old-peer','dh-legacy-trust','dh-old-settings'].forEach(k=>{try{localStorage.removeItem(k);}catch(e){}});
+    if(from<2){const name=SafeStorage.get('peer-name','')||SafeStorage.get('username','');if(name&&!SafeStorage.get('dh-name',''))SafeStorage.set('dh-name',name);}
+    if(from<3){try{const ot=SafeStorage.getJSON('tasks',null);if(ot&&!SafeStorage.getJSON('dh-tasks',null))SafeStorage.setJSON('dh-tasks',ot);}catch(e){}}
+    if(from<4){try{Object.keys(localStorage).filter(k=>k.startsWith('dh-cache-')).forEach(k=>{try{localStorage.removeItem(k);}catch(e){}});}catch(e){}}
+  }
+}
+
+/* ═══════════════════════════════════════════════════════
+   WORKER REGISTRY — track web workers for cleanup
+═══════════════════════════════════════════════════════ */
+class WorkerRegistry{
+  constructor(){this._w=new Map();}
+  register(id,worker){const ex=this._w.get(id);if(ex){try{ex.terminate();}catch(e){}}this._w.set(id,worker);}
+  terminate(id){const w=this._w.get(id);if(w){try{w.terminate();}catch(e){}this._w.delete(id);}}
+  terminateAll(){this._w.forEach((_,id)=>this.terminate(id));}
+  size(){return this._w.size;}
+}
+
+/* ═══════════════════════════════════════════════════════
    BOOT MANAGER — strict sequential boot with progress
 ═══════════════════════════════════════════════════════ */
 class BootManager {
@@ -6112,6 +6469,9 @@ class BootManager {
     await this._setProgress(35,'Initializing storage…');
 
     try{await App.store.init();}catch(e){App.log?.warn('Storage init error: '+e.message);}
+
+    // Run storage migration to handle schema/version changes
+    try{App.migration.run();}catch(e){App.log?.warn('Migration: '+e.message);}
 
     await this._setProgress(50,'Loading user data…');
 
@@ -6224,6 +6584,33 @@ class BootManager {
     // Init broadcast discovery after peer
     try{App.broadcastDisc.init();}catch(e){}
 
+    // Start network recovery (handles wifi↔mobile, tab restore, sleep)
+    try{App.netRecovery.init();}catch(e){App.log?.warn('NetRecovery: '+e.message);}
+
+    // Check permissions for known APIs
+    try{App.perms.checkAll();}catch(e){}
+
+    // Start long-session cleanup scheduler (10-min intervals)
+    try{App.sessionCleaner.init();}catch(e){App.log?.warn('SessionCleaner: '+e.message);}
+
+    // Register all core modules in ModuleRegistry
+    try{
+      const mods={'BootManager':App.boot,'LifecycleManager':App.lifecycle,'EventBus':App.bus,
+        'CapabilityManager':App.caps,'PermissionRecoveryManager':App.perms,
+        'RTCRegistry':App.rtcReg,'StreamRegistry':App.streamReg,
+        'ConnectionRegistry':App.connReg,'SingleSourceStateStore':App.stateStore,
+        'MemoryMonitor':App.memMon,'LongSessionCleanupScheduler':App.sessionCleaner,
+        'NetworkRecoveryManager':App.netRecovery,'StorageMigrationManager':App.migration,
+        'WorkerRegistry':App.workerReg,'PeerManager':App.peer,'FileTransfer':App.files,
+        'SensorManager':App.sensors,'AutomationEngine':App.auto,'AppDoctor':App.doctor,
+        'SelfHealingEngine':App.healer,'EmergencyRecoveryManager':App.recovery};
+      Object.entries(mods).forEach(([n,inst])=>{
+        App.modules.register(n,inst,{critical:['PeerManager','FileTransfer','BootManager'].includes(n)});
+        App.modules.setStatus(n,inst?'running':'missing');
+      });
+      App.log?.info('ModuleRegistry: '+Object.keys(mods).length+' modules registered');
+    }catch(e){App.log?.warn('ModuleRegistry: '+e.message);}
+
     await this._setProgress(95,'Running health check…');
 
     await App.health.run();
@@ -6236,10 +6623,22 @@ class BootManager {
     // Auto-save session + boot snapshot
     Timers.interval('session-save',()=>{App.session_mgr.saveSnapshot();App.bootRecovery.saveSessionSnapshot();},30000);
 
+    // Periodic stale RTC connection cleanup (every 5 minutes)
+    Timers.interval('rtc-stale-clean',()=>{
+      try{App.rtcReg?.cleanStale();}catch(e){}
+      try{App.stateStore?.reconcile();}catch(e){}
+    },300000);
+
     // Fix 28: smart check + periodic loop
     Timers.timeout('smart-check',()=>{
       App.smart.check();
-      Timers.interval('smart-check-loop',()=>App.smart.check(),120000);
+      App.stateStore?.reconcile();
+      App.memMon?.sample();
+      Timers.interval('smart-check-loop',()=>{
+        App.smart.check();
+        App.stateStore?.reconcile();
+        App.memMon?.sample();
+      },120000);
     },10000);
 
     await this._setProgress(100,'Ready!');
@@ -6527,6 +6926,8 @@ class SessionSnapshotManager {
 class AppDoctor {
   constructor(){this._lastReport=null;}
   async runDiagnosis(){
+    // Update capability map first
+    try{App.caps?._detect();}catch(e){}
     const checks=await Promise.allSettled([
       this._check('PeerJS Loaded',()=>typeof Peer!=='undefined'),
       this._check('IndexedDB Available',async()=>{const r=await App.store?.get('messages','x');return true;}),
@@ -6564,6 +6965,15 @@ class AppDoctor {
     if(!this._lastReport){el.innerHTML='<div style="color:var(--muted)">Run diagnosis to see results</div>';return;}
     const good=this._lastReport.filter(c=>c.ok).length;
     const total=this._lastReport.length;
+    // Render capability summary
+    const capEl=document.getElementById('capability-summary');
+    if(capEl&&App.caps){
+      const caps=App.caps.getAll();
+      const support=Object.entries(caps).filter(([,v])=>v).length;
+      const total=Object.keys(caps).length;
+      capEl.innerHTML='<b>Browser Capabilities:</b> '+support+'/'+total+' APIs available · '+
+        Object.entries(caps).filter(([,v])=>!v).map(([k])=>'<span style="color:var(--yellow)">'+k+'</span>').join(', ');
+    }
     const statusEl=document.getElementById('doctor-status');
     if(statusEl){
       const pct=Math.round(good/total*100);
@@ -7089,6 +7499,7 @@ class CameraBridgeManager {
   }
   stop(){
     try{this._stream?.getTracks().forEach(t=>t.stop());}catch(e){}
+    try{App.streamReg?.stop('call-stream');}catch(e){}
     this._stream=null;
     const v=document.getElementById('cam-preview');
     if(v)v.srcObject=null;
@@ -7237,7 +7648,21 @@ const App = {
   nfc: new NFCManager(),
   camBridge: new CameraBridgeManager(),
 };
+// Core engine registries
 App.lifecycle = new LifecycleManager();
+App.bus       = new EventBus();
+App.modules   = new ModuleRegistry();
+App.caps      = new CapabilityManager();
+App.perms     = new PermissionRecoveryManager();
+App.rtcReg    = new RTCRegistry();
+App.streamReg = new StreamRegistry();
+App.connReg   = new ConnectionRegistry();
+App.stateStore= new SingleSourceStateStore();
+App.memMon    = new MemoryMonitor();
+App.sessionCleaner = new LongSessionCleanupScheduler();
+App.netRecovery    = new NetworkRecoveryManager();
+App.migration      = new StorageMigrationManager();
+App.workerReg      = new WorkerRegistry();
 
 // Global error boundary delegated to GlobalErrorManager.init()
 
@@ -7265,6 +7690,14 @@ if(typeof window._CDN_LOAD==='function'){
 // Security: URL auto-connect requires user confirmation
 // Security: Whiteboard images sanitized via offscreen canvas
 // Security: LocalStorage sensitive keys session-encrypted
+
+// ── Registry teardown on page unload ──────────────────────────────────────
+window.addEventListener('beforeunload',()=>{
+  try{App.workerReg?.terminateAll();}catch(e){}
+  try{App.streamReg?.stopAll();}catch(e){}
+  try{App.rtcReg?.closeAll();}catch(e){}
+  try{App.connReg?.closeAll();}catch(e){}
+});
 </script>
 </body>
 </html>
