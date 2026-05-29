@@ -241,7 +241,7 @@ a:hover{text-decoration:underline;}
 .q-e{color:var(--green);} .q-g{color:#84cc16;} .q-p{color:var(--yellow);} .q-c{color:var(--red);}
 #avis{height:40px;display:none;align-items:center;gap:2px;}
 .av-bar{width:3px;border-radius:2px;background:var(--primary);transition:height .1s;}
-#vwrap{display:none;background:#000;border-radius:var(--radius);overflow:hidden;margin-bottom:8px;}
+#vwrap{display:none;background:#000;border-radius:var(--radius);overflow:hidden;margin-bottom:8px;position:relative;}
 #lvid,#rvid{width:50%;max-height:240px;object-fit:cover;vertical-align:top;}
 #incoming-call-modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,.8);z-index:5000;align-items:center;justify-content:center;}
 #incoming-call-modal.on{display:flex;}
@@ -763,7 +763,7 @@ select{appearance:none;-webkit-appearance:none;background-image:url("data:image/
   </div>
   <div id="gc-members" style="margin-bottom:10px;display:flex;flex-wrap:wrap;gap:4px"></div>
   <div id="gc-msgs" style="background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius);padding:10px;min-height:200px;max-height:320px;overflow-y:auto;margin-bottom:8px;font-size:13px;display:flex;flex-direction:column;gap:4px">
-    <div style="color:var(--muted);text-align:center;padding:20px">Create or join a group room to start chatting</div>
+    <div data-empty="1" style="color:var(--muted);text-align:center;padding:20px">Create or join a group room to start chatting</div>
   </div>
   <div style="display:flex;gap:8px">
     <input id="gc-inp" placeholder="Group message…" style="flex:1">
@@ -1420,7 +1420,7 @@ class ToastManager {
   }
 }
 
-/* ═══════════════════════════════════════════
+/* ═════════════════════════════════ ��═════════
    LOGGER
 ═══════════════════════════════════════════ */
 class Logger {
@@ -1847,7 +1847,7 @@ class BackgroundEngine {
 
 /* ═══════════════════════════════════════════
    ROOM MANAGER
-═════s=�═════════════════════════════════════ */
+═══════════════════════════════════════════ */
 class RoomManager {
   constructor() {
     this.requireApproval = localStorage.getItem('dh-approval') === '1';
@@ -3212,7 +3212,7 @@ class Whiteboard {
     const c = this._canvas;
     const getPos = e => {
       const rect = c.getBoundingClientRect();
-      const src = e.touches ? e.touches[0] : e;
+      const src = e.changedTouches?.[0] || e.touches?.[0] || e;
       return { x: src.clientX - rect.left, y: src.clientY - rect.top };
     };
 
@@ -4606,7 +4606,7 @@ class UIManager {
     vol?.addEventListener('input', e => {
       setEl('vol-lbl', e.target.value + '%');
       const rv = document.getElementById('rvid');
-      if (rv) rv.volume = e.target.value / 100;
+      if (rv) rv.volume = Math.min(1, e.target.value / 100);
     });
     const gain = document.getElementById('gain-slider');
     gain?.addEventListener('input', e => {
@@ -4970,7 +4970,7 @@ class UIManager {
         <button class="btn btn-p btn-xs" onclick="event.stopPropagation();App.media.voice('${pid}')">🎤</button>
         <button class="btn btn-g btn-xs" onclick="event.stopPropagation();App.media.video('${pid}')">📹</button>
         <button class="btn btn-g btn-xs" onclick="event.stopPropagation();document.getElementById('fi').click()">📁</button>
-        <button class="btn btn-d btn-xs" onclick="event.stopPropagation();App.room.block('${pid}');App.peer._onClose('${pid}','blocked')">🚫</button>
+        <button class="btn btn-d btn-xs" onclick="event.stopPropagation();App.room.block('${pid}');try{App.peer.dconns.get('${pid}')?.close();}catch(e){App.peer._onClose('${pid}','blocked')}">🚫</button>
       </div>
     </div>`;
     if (old) old.outerHTML = html;
@@ -5180,6 +5180,10 @@ const App = {
         App.tasks.init();
         App.group.init();
         App.editor.init();
+        App.wb.init();
+        App.healer.init();
+        App.rc.init();
+        App.devCtrl.init();
         App.log.warn('PeerJS not loaded — P2P features disabled');
         App.ui.setStatus('OFFLINE');
       });
