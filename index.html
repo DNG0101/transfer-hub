@@ -1847,7 +1847,7 @@ class BackgroundEngine {
 
 /* ═══════════════════════════════════════════
    ROOM MANAGER
-═══════════════════════════════════════════ */
+═════s=�═════════════════════════════════════ */
 class RoomManager {
   constructor() {
     this.requireApproval = localStorage.getItem('dh-approval') === '1';
@@ -1880,12 +1880,12 @@ class MsgQueue {
     this.q.push({ pid, text, id, ts: Date.now() });
     App.store.put('msg_queue', { id, pid, text, ts: Date.now() }).catch(() => {});
   }
-  flush(pid) {
+  async flush(pid) {
     const pending = this.q.filter(m => m.pid === pid);
-    pending.forEach(m => {
-      const sent = App.peer.sendMsg(m.pid, m.text, m.id);
+    for (const m of pending) {
+      const sent = await App.peer.sendMsg(m.pid, m.text, m.id);
       if (sent) { this.q = this.q.filter(q => q.id !== m.id); App.store.delete('msg_queue', m.id).catch(() => {}); }
-    });
+    }
   }
 }
 
@@ -3092,12 +3092,11 @@ class MediaManager {
     } catch(e) {}
   }
 
-  _applyVolume(stream) {
+  _applyVolume(_stream) {
     const slider = document.getElementById('vol-slider');
     const vol = slider ? (slider.value / 100) : 1;
-    stream.getAudioTracks().forEach(t => {
-      if (t.applyConstraints) t.applyConstraints({ volume: vol }).catch(()=>{});
-    });
+    const rv = document.getElementById('rvid');
+    if (rv) rv.volume = vol;
   }
 
   startRecording() {
@@ -3128,7 +3127,7 @@ class MediaManager {
   }
 
   _notif(name) {
-    if (Notification.permission === 'granted') {
+    if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
       try { new Notification('Incoming Call', { body: `from ${name}`, icon: '' }); } catch(e) {}
     }
   }
@@ -4540,7 +4539,7 @@ class UIManager {
     const n = (this._unread.get(pid) || 0) + 1;
     this._unread.set(pid, n);
     this._updUnread(pid);
-    if (document.hidden && Notification.permission === 'granted') {
+    if (document.hidden && typeof Notification !== 'undefined' && Notification.permission === 'granted') {
       try { new Notification('DevHub', { body: `New message from ${App.peer.peerName(pid)}` }); } catch(e) {}
     }
   }
@@ -4742,7 +4741,7 @@ class UIManager {
     });
     // Load saved settings
     const name = localStorage.getItem('dh-name'); if (name) { const si = document.getElementById('set-name'); if (si) si.value = name; }
-    const mode = localStorage.getItem('dh-mode') || 'advanced'; const ms = document.getElementById('set-mode'); if (ms) ms.value = mode;
+    const mode = localStorage.getItem('dh-mode') || 'developer'; const ms = document.getElementById('set-mode'); if (ms) ms.value = mode;
     const approval = localStorage.getItem('dh-approval') === '1'; const sa = document.getElementById('set-approval'); if (sa) sa.checked = approval;
     const e2e = localStorage.getItem('dh-e2e') === '1'; const se = document.getElementById('set-e2e'); if (se) se.checked = e2e;
   }
